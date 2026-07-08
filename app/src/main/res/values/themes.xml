@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.InkDiary" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

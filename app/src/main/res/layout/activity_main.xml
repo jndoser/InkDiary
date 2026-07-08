@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/white">
+
+    <com.longnguyen.inkdiary.InkCanvasView
+        android:id="@+id/inkCanvas"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <com.longnguyen.inkdiary.HandwrittenReplyView
+        android:id="@+id/replyView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="32dp"
+        android:clickable="false"
+        android:focusable="false" />
+
+    <!-- DEBUG ONLY for step 2: shows what ML Kit recognized, so you can
+         judge accuracy directly without digging through Logcat.
+         This gets removed once we wire up Gemini and the handwritten reply. -->
+    <TextView
+        android:id="@+id/debugRecognizedText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#DDDDDD"
+        android:padding="12dp"
+        android:textSize="16sp"
+        android:text="" />
+
+</FrameLayout>
