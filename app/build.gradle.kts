@@ -25,6 +25,8 @@ android {
         }
         val apiKey = properties.getProperty("gemini.api.key") ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"$apiKey\"")
+        val sambaKey = properties.getProperty("sambanova.api.key") ?: ""
+        buildConfigField("String", "SAMBANOVA_API_KEY", "\"$sambaKey\"")
     }
 
     buildFeatures {
@@ -78,4 +80,8 @@ dependencies {
     // Manually add the correct versions of the missing dependencies if needed
     implementation("commons-io:commons-io:2.6")
     implementation("com.tencent:mmkv-static:1.2.10")
+
+    // Networking & JSON
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.code.gson:gson:2.10.1")
 }

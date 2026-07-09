@@ -20,14 +20,28 @@
             android:textStyle="bold"
             android:textColor="@android:color/black" />
 
-        <Button
-            android:id="@+id/btnDeleteDay"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentEnd="true"
-            android:text="Delete Day"
-            android:textSize="12sp"
-            style="?android:attr/borderlessButtonStyle" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnSummary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Summary"
+                android:textSize="12sp"
+                style="?android:attr/borderlessButtonStyle" />
+
+            <Button
+                android:id="@+id/btnDeleteDay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Delete Day"
+                android:textSize="12sp"
+                style="?android:attr/borderlessButtonStyle" />
+        </LinearLayout>
     </RelativeLayout>
 
     <androidx.recyclerview.widget.RecyclerView

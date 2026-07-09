@@ -25,6 +25,11 @@ import java.util.Locale
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.widget.ArrayAdapter
+import android.widget.ScrollView
+import android.widget.Spinner
+import android.os.Handler
+import android.os.Looper
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,13 +37,27 @@ class MainActivity : AppCompatActivity() {
     private lateinit var replyView: HandwrittenReplyView
     private lateinit var debugText: TextView
     private val recognizer = HandwritingRecognizer()
-    private var geminiService = GeminiService("") // Initialized in setupGemini
+    private lateinit var llmService: LLMService
     private lateinit var database: AppDatabase
-    private lateinit var gestureDetector: GestureDetector
+    private var tapCount = 0
+    private val handler = Handler(Looper.getMainLooper())
+    private val tapRunnable = Runnable {
+        Log.d("MultiTap", "Executing action for tap count: $tapCount")
+        when (tapCount) {
+            3 -> showApiKeyDialog()
+            4 -> toggleDebugVisibility()
+        }
+        tapCount = 0
+    }
+
     private var recognizerIsReady = false
 
     private fun getTodayDate(): String {
         return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    }
+
+    private fun getActiveLLMName(): String {
+        return if (Config.getPreferredLLM(this) == Config.LLM_GEMINI) "Gemini" else "SambaNova"
     }
 
     private fun isOnline(): Boolean {
@@ -48,48 +67,115 @@ class MainActivity : AppCompatActivity() {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    private fun setupGemini() {
-        val apiKey = Config.getGeminiApiKey(this)
-        if (apiKey.isBlank()) {
-            debugText.text = "GUIDE: API Key is missing. Tap 3 times on the screen (with finger) to enter your Gemini API Key."
+    private fun setupLLM() {
+        llmService = LLMFactory.getService(this)
+        
+        val preferred = Config.getPreferredLLM(this)
+        val geminiKey = Config.getGeminiApiKey(this)
+        val sambaKey = Config.getSambaNovaApiKey(this)
+
+        if (geminiKey.isBlank() && sambaKey.isBlank()) {
+            debugText.text = "GUIDE: API Key is missing. Tap 3 times (finger) to enter API Keys."
         } else {
-            geminiService = GeminiService(apiKey)
+            val active = if (preferred == Config.LLM_GEMINI) "Gemini" else "SambaNova"
             if (recognizerIsReady) {
-                debugText.text = "Ready. Write something and stop for 2 seconds."
+                debugText.text = "Ready (Using $active). Write something."
             }
         }
     }
 
     private fun showApiKeyDialog() {
-        val input = EditText(this).apply {
-            hint = "Enter Gemini API Key"
-            setText(Config.getGeminiApiKey(this@MainActivity))
-        }
-        val layout = LinearLayout(this).apply {
+        val context = this
+        val layout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             val padding = (16 * resources.displayMetrics.density).toInt()
             setPadding(padding, padding, padding, padding)
-            addView(input)
         }
 
-        AlertDialog.Builder(this)
-            .setTitle("Gemini API Configuration")
-            .setMessage("Please enter your Gemini API Key. You can get one from Google AI Studio.")
-            .setView(layout)
-            .setPositiveButton("Save") { _, _ ->
-                val newKey = input.text.toString().trim()
-                if (newKey.isNotEmpty()) {
-                    Config.saveGeminiApiKey(this, newKey)
-                    setupGemini()
-                    Toast.makeText(this, "API Key saved successfully", Toast.LENGTH_SHORT).show()
+        val geminiInput = EditText(context).apply {
+            hint = "Gemini API Key"
+            setText(Config.getGeminiApiKey(context))
+        }
+        
+        val sambaInput = EditText(context).apply {
+            hint = "SambaNova API Key"
+            setText(Config.getSambaNovaApiKey(context))
+        }
+
+        val currentLLM = Config.getPreferredLLM(context)
+
+        val geminiLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply { text = "Gemini API Key:" })
+            addView(geminiInput)
+            visibility = if (currentLLM == Config.LLM_GEMINI) View.VISIBLE else View.GONE
+        }
+
+        val sambaLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply { text = "SambaNova API Key:" })
+            addView(sambaInput)
+            visibility = if (currentLLM == Config.LLM_SAMBANOVA) View.VISIBLE else View.GONE
+        }
+
+        val options = arrayOf("Gemini", "SambaNova")
+        val spinner = Spinner(context).apply {
+            adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, options)
+            
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    geminiLayout.visibility = if (position == 0) View.VISIBLE else View.GONE
+                    sambaLayout.visibility = if (position == 1) View.VISIBLE else View.GONE
                 }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+            
+            setSelection(if (currentLLM == Config.LLM_GEMINI) 0 else 1)
+        }
+
+        layout.addView(TextView(context).apply { text = "Preferred LLM:" })
+        layout.addView(spinner)
+        layout.addView(View(context).apply { layoutParams = LinearLayout.LayoutParams(1, 20) })
+        layout.addView(geminiLayout)
+        layout.addView(sambaLayout)
+
+        val scrollView = ScrollView(context).apply { addView(layout) }
+
+        AlertDialog.Builder(context)
+            .setTitle("AI Configuration")
+            .setView(scrollView)
+            .setPositiveButton("Save") { _, _ ->
+                Config.saveGeminiApiKey(context, geminiInput.text.toString())
+                Config.saveSambaNovaApiKey(context, sambaInput.text.toString())
+                
+                val preferred = if (spinner.selectedItemPosition == 0) Config.LLM_GEMINI else Config.LLM_SAMBANOVA
+                Config.setPreferredLLM(context, preferred)
+                
+                setupLLM()
+                Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
+    private fun toggleDebugVisibility() {
+        val isCurrentlyVisible = debugText.visibility == View.VISIBLE
+        val newState = !isCurrentlyVisible
+        debugText.visibility = if (newState) View.VISIBLE else View.GONE
+        Config.setDebugEnabled(this, newState)
+        Toast.makeText(this, if (newState) "Debug Mode On" else "Debug Mode Off", Toast.LENGTH_SHORT).show()
+    }
+
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        gestureDetector.onTouchEvent(ev)
+        if (ev.actionMasked == MotionEvent.ACTION_UP) {
+            val isFinger = ev.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER
+            if (isFinger) {
+                tapCount++
+                Log.d("MultiTap", "Tap counted: $tapCount")
+                handler.removeCallbacks(tapRunnable)
+                handler.postDelayed(tapRunnable, 600)
+            }
+        }
         return super.dispatchTouchEvent(ev)
     }
 
@@ -102,42 +188,9 @@ class MainActivity : AppCompatActivity() {
         debugText = findViewById(R.id.debugRecognizedText)
         database = AppDatabase.getDatabase(this)
 
-        setupGemini()
+        debugText.visibility = if (Config.isDebugEnabled(this)) View.VISIBLE else View.GONE
 
-        // Triple tap detection using finger
-        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            private var lastTapTime = 0L
-            private var tapCount = 0
-
-            override fun onDown(e: MotionEvent): Boolean = true
-
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val currentTime = System.currentTimeMillis()
-                val isFinger = e.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER
-                
-                Log.d("TripleTap", "Tap detected. isFinger: $isFinger, count: ${tapCount + 1}")
-
-                if (!isFinger) {
-                    tapCount = 0
-                    return false
-                }
-
-                if (currentTime - lastTapTime < 800) {
-                    tapCount++
-                } else {
-                    tapCount = 1
-                }
-                lastTapTime = currentTime
-                
-                if (tapCount == 3) {
-                    Log.d("TripleTap", "TRIPLE TAP SUCCESS")
-                    tapCount = 0
-                    showApiKeyDialog()
-                    return true
-                }
-                return false
-            }
-        })
+        setupLLM()
 
         findViewById<View>(R.id.btnHistory).setOnClickListener {
             val intent = android.content.Intent(this, HistoryActivity::class.java)
@@ -170,11 +223,7 @@ class MainActivity : AppCompatActivity() {
             onReady = {
                 runOnUiThread {
                     recognizerIsReady = true
-                    if (Config.getGeminiApiKey(this@MainActivity).isBlank()) {
-                        debugText.text = "GUIDE: API Key is missing. Tap 3 times on the screen (with finger) to enter your Gemini API Key."
-                    } else {
-                        debugText.text = "Ready. Write something and stop for 2 seconds."
-                    }
+                    setupLLM()
                 }
             },
             onError = { e ->
@@ -205,13 +254,14 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     Log.d("MainActivity", "Recognized text: $text")
-                    runOnUiThread { debugText.text = "Asking Gemini..." }
+                    val llmName = getActiveLLMName()
+                    runOnUiThread { debugText.text = "Asking $llmName..." }
 
                     if (!isOnline()) {
                         runOnUiThread {
                             debugText.text = "Offline. Please connect to WiFi."
                             replyView.visibility = View.VISIBLE
-                            replyView.setTextAndAnimate("Offline. Please connect to WiFi to ask Gemini.")
+                            replyView.setTextAndAnimate("Offline. Please connect to WiFi to ask $llmName.")
                         }
                         return@recognize
                     }
@@ -222,11 +272,13 @@ class MainActivity : AppCompatActivity() {
                         val historyEntries = withContext(Dispatchers.IO) {
                             conversationDao.getConversationsByDate(today)
                         }
+                        
                         val history = historyEntries.map { entry ->
-                            content(entry.role) { text(entry.content) }
+                            ChatMessage(entry.role, entry.content)
                         }
 
-                        val response = geminiService.generateResponse(text, history)
+                        val response = llmService.generateResponse(text, history)
+
                         if (response != null) {
                             withContext(Dispatchers.IO) {
                                 conversationDao.insert(ConversationEntry(date = today, role = "user", content = text))
@@ -234,15 +286,15 @@ class MainActivity : AppCompatActivity() {
                             }
                             runOnUiThread {
                                 inkCanvas.clearAll()
-                                debugText.text = "Gemini: $response"
+                                debugText.text = "AI: $response"
                                 replyView.visibility = View.VISIBLE
                                 replyView.setTextAndAnimate(response)
                             }
                         } else {
                             runOnUiThread {
-                                debugText.text = "Error calling Gemini"
+                                debugText.text = "Error calling $llmName"
                                 replyView.visibility = View.VISIBLE
-                                replyView.setTextAndAnimate("Error calling Gemini. Please try again.")
+                                replyView.setTextAndAnimate("Error calling $llmName. Please try again.")
                             }
                         }
                     }

@@ -2,6 +2,7 @@ package com.longnguyen.inkdiary.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
@@ -26,4 +27,13 @@ interface ConversationDao {
 
     @Query("DELETE FROM conversations")
     suspend fun deleteAll()
+
+    @Query("SELECT * FROM daily_summaries WHERE date = :date")
+    suspend fun getSummaryByDate(date: String): DailySummary?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSummary(summary: DailySummary)
+
+    @Query("DELETE FROM daily_summaries WHERE date = :date")
+    suspend fun deleteSummaryByDate(date: String)
 }

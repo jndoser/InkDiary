@@ -1,0 +1,73 @@
+package com.longnguyen.inkdiary
+
+import android.util.Log
+import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.concurrent.TimeUnit
+
+private const val TAG = "SambaNovaService"
+
+class SambaNovaService(private val apiKey: String) : LLMService {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+    
+    private val gson = Gson()
+    private val mediaType = "application/json; charset=utf-8".toMediaType()
+    private val baseUrl = "https://api.sambanova.ai/v1/chat/completions"
+
+    data class SambaMessage(val role: String, val content: String)
+    data class ChatRequest(val model: String, val messages: List<SambaMessage>, val stream: Boolean = false)
+    data class ChatResponse(val choices: List<Choice>)
+    data class Choice(val message: SambaMessage)
+
+    override suspend fun generateResponse(prompt: String, history: List<ChatMessage>): String? = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) return@withContext null
+        Log.d(TAG, "Calling SambaNova with prompt: $prompt")
+
+        try {
+            val messages = mutableListOf<SambaMessage>()
+            messages.add(SambaMessage("system", "You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. Respond in the language the user uses, but if you're unsure, use English."))
+            
+            history.forEach { 
+                val role = if (it.role == "user") "user" else "assistant"
+                messages.add(SambaMessage(role, it.content))
+            }
+            
+            messages.add(SambaMessage("user", prompt))
+
+            val chatRequest = ChatRequest(
+                model = "gemma-4-31B-it",
+                messages = messages,
+                stream = false
+            )
+
+            val jsonBody = gson.toJson(chatRequest)
+            val request = Request.Builder()
+                .url(baseUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .post(jsonBody.toRequestBody(mediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "SambaNova Error: ${response.code} ${response.message}")
+                    return@withContext null
+                }
+
+                val responseBody = response.body?.string()
+                val chatResponse = gson.fromJson(responseBody, ChatResponse::class.java)
+                chatResponse.choices.firstOrNull()?.message?.content
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "SambaNova Exception: ${e.message}", e)
+            null
+        }
+    }
+}

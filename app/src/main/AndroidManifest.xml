@@ -35,6 +35,12 @@
             android:label="Conversation Detail"
             android:exported="false"
             android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".SummaryActivity"
+            android:label="Summary"
+            android:exported="false"
+            android:screenOrientation="portrait" />
     </application>
 
 </manifest>
