@@ -9,10 +9,18 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.google.ai.client.generativeai.type.content
+import com.longnguyen.inkdiary.data.AppDatabase
+import com.longnguyen.inkdiary.data.ConversationEntry
 import com.onyx.android.sdk.api.device.epd.EpdController
 import com.onyx.android.sdk.api.device.epd.UpdateMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.lang.reflect.Method
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,6 +29,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var debugText: TextView
     private val recognizer = HandwritingRecognizer()
     private val geminiService = GeminiService(Config.GEMINI_API_KEY)
+    private lateinit var database: AppDatabase
+
+    private fun getTodayDate(): String {
+        return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    }
 
     private fun isOnline(): Boolean {
         val connectivityManager = getSystemService(ConnectivityManager::class.java)
@@ -49,13 +62,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        bypassHiddenApiRestrictions()
+        // bypassHiddenApiRestrictions() // Disabled to prevent reflection errors on startup
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         inkCanvas = findViewById(R.id.inkCanvas)
         replyView = findViewById(R.id.replyView)
         debugText = findViewById(R.id.debugRecognizedText)
+        database = AppDatabase.getDatabase(this)
+
+        findViewById<android.view.View>(R.id.btnHistory).setOnClickListener {
+            val intent = android.content.Intent(this, HistoryActivity::class.java)
+            startActivity(intent)
+        }
 
         // Ensure replyView is hidden initially
         replyView.visibility = android.view.View.GONE
@@ -77,24 +96,24 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) { }
                 
                 runOnUiThread {
-                    debugText.text = "Model san sang. Viet gi do roi dung but 3 giay."
+                    debugText.text = "Ready. Write something and stop for 3 seconds."
                 }
             }
         }
 
         // One-time model download. First run needs WiFi; after that it's cached
         // and recognize() works fully offline.
-        debugText.text = "Dang tai model tieng Viet..."
+        debugText.text = "Downloading English model..."
         recognizer.setup(
             onReady = {
                 runOnUiThread {
-                    debugText.text = "Model san sang. Viet gi do roi dung but 3 giay."
+                    debugText.text = "Ready. Write something and stop for 3 seconds."
                 }
             },
             onError = { e ->
                 runOnUiThread {
-                    debugText.text = "Loi tai model: ${e.message}"
-                    Toast.makeText(this, "Can WiFi cho lan dau tai model", Toast.LENGTH_LONG).show()
+                    debugText.text = "Model download error: ${e.message}"
+                    Toast.makeText(this, "WiFi required for first-time model download", Toast.LENGTH_LONG).show()
                 }
             }
         )
@@ -110,32 +129,32 @@ class MainActivity : AppCompatActivity() {
             val ink = inkCanvas.exportInk()
             
             // Show that we're recognizing
-            debugText.text = "Dang nhan dien..."
+            debugText.text = "Recognizing..."
 
             recognizer.recognize(
                 ink,
                 onResult = { text ->
                     if (text.isBlank()) {
                         runOnUiThread { 
-                            debugText.text = "(khong nhan ra chu nao)"
+                            debugText.text = "(No text recognized)"
                             replyView.visibility = android.view.View.VISIBLE
-                            replyView.setTextAndAnimate("(Khong nhan dang duoc chu viet)")
+                            replyView.setTextAndAnimate("(Could not recognize handwriting)")
                         }
                         return@recognize
                     }
 
                     Log.d("MainActivity", "Recognized text: $text")
                     runOnUiThread {
-                        debugText.text = "Nhan dien: \"$text\". Dang hoi Gemini..."
+                        debugText.text = "Recognized: \"$text\". Asking Gemini..."
                     }
 
                     // Step 3: Send the recognized text to Gemini (check online first)
                     if (!isOnline()) {
                         Log.w("MainActivity", "Device is offline")
                         runOnUiThread {
-                            debugText.text = "Offline: Khong the gui den Gemini. Vui lòng bật WiFi."
+                            debugText.text = "Offline: Cannot send to Gemini. Please turn on WiFi."
                             replyView.visibility = android.view.View.VISIBLE
-                            replyView.setTextAndAnimate("Dang offline. Vui long bat WiFi de hoi Gemini.")
+                            replyView.setTextAndAnimate("Offline. Please connect to WiFi to ask Gemini.")
                         }
                         return@recognize
                     }
@@ -143,35 +162,51 @@ class MainActivity : AppCompatActivity() {
                     Log.d("MainActivity", "Calling Gemini service...")
                     val startTime = System.currentTimeMillis()
                     lifecycleScope.launch {
-                        val response = geminiService.generateResponse(text)
+                        val today = getTodayDate()
+                        val conversationDao = database.conversationDao()
+                        
+                        // Fetch today's history
+                        val historyEntries = withContext(Dispatchers.IO) {
+                            conversationDao.getConversationsByDate(today)
+                        }
+                        
+                        // Convert to Gemini Content objects
+                        val history = historyEntries.map { entry ->
+                            content(entry.role) { text(entry.content) }
+                        }
+
+                        val response = geminiService.generateResponse(text, history)
                         val duration = System.currentTimeMillis() - startTime
                         Log.d("MainActivity", "Gemini call finished in ${duration}ms, response: ${response?.take(20)}...")
-                        runOnUiThread {
-                            // Step 4: Clear user writing before showing response
-                            inkCanvas.clearAll()
+                        
+                        if (response != null) {
+                            // Save to database
+                            withContext(Dispatchers.IO) {
+                                conversationDao.insert(ConversationEntry(date = today, role = "user", content = text))
+                                conversationDao.insert(ConversationEntry(date = today, role = "model", content = response))
+                            }
                             
-                            if (response != null) {
+                            runOnUiThread {
+                                // Step 4: Clear user writing before showing response
+                                inkCanvas.clearAll()
                                 debugText.text = "Gemini (${duration}ms): $response"
                                 
-                                // Perform GC refresh to clean ghosting, but only once we're showing the reply
-                                try {
-                                    EpdController.refreshScreen(inkCanvas, UpdateMode.GC)
-                                } catch (e: Exception) {}
-
-                                // Show and animate the reply
+                                // Show and animate the reply (it handles its own E-ink DU mode)
                                 replyView.visibility = android.view.View.VISIBLE
                                 replyView.setTextAndAnimate(response)
-                            } else {
-                                debugText.text = "Loi khi goi Gemini (Xem Logcat)"
+                            }
+                        } else {
+                            runOnUiThread {
+                                debugText.text = "Error calling Gemini (Check Logcat)"
                                 replyView.visibility = android.view.View.VISIBLE
-                                replyView.setTextAndAnimate("Loi khi goi Gemini. Vui long thu lai.")
+                                replyView.setTextAndAnimate("Error calling Gemini. Please try again.")
                             }
                         }
                     }
                 },
                 onError = { e ->
                     runOnUiThread {
-                        debugText.text = "Loi nhan dien: ${e.message}"
+                        debugText.text = "Recognition error: ${e.message}"
                     }
                 }
             )

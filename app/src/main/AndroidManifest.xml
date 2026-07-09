@@ -2,8 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Needed once, to download the ML Kit Vietnamese model over WiFi.
-         Recognition itself runs fully offline afterward. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="com.onyx.permission.DEVICE_CONTROL" />
@@ -24,6 +22,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".HistoryActivity"
+            android:label="History"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".DailyDetailActivity"
+            android:label="Conversation Detail"
+            android:exported="false"
+            android:screenOrientation="portrait" />
     </application>
 
 </manifest>

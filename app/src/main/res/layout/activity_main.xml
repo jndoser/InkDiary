@@ -17,6 +17,16 @@
         android:clickable="false"
         android:focusable="false" />
 
+    <ImageButton
+        android:id="@+id/btnHistory"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="16dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:src="@android:drawable/ic_menu_recent_history"
+        android:contentDescription="History" />
+
     <!-- DEBUG ONLY for step 2: shows what ML Kit recognized, so you can
          judge accuracy directly without digging through Logcat.
          This gets removed once we wire up Gemini and the handwritten reply. -->

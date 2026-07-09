@@ -13,9 +13,9 @@ import com.google.mlkit.vision.digitalink.Ink
 private const val TAG = "HandwritingRecognizer"
 
 /**
- * Step 2: raw strokes -> Vietnamese text, fully offline after the first
+ * Step 2: raw strokes -> English text, fully offline after the first
  * model download. No network call happens per-recognition — only once,
- * up front, to fetch the "vi" model (a few MB).
+ * up front, to fetch the "en" model (a few MB).
  */
 class HandwritingRecognizer {
 
@@ -24,19 +24,19 @@ class HandwritingRecognizer {
     private var model: DigitalInkRecognitionModel? = null
 
     /**
-     * Downloads the Vietnamese recognition model if not already present.
+     * Downloads the English recognition model if not already present.
      * Call this once, e.g. in onCreate. Requires WiFi the first time;
      * after that the model is cached on-device and works fully offline.
      */
     fun setup(onReady: () -> Unit, onError: (Exception) -> Unit) {
         val modelIdentifier = try {
-            DigitalInkRecognitionModelIdentifier.fromLanguageTag("vi")
+            DigitalInkRecognitionModelIdentifier.fromLanguageTag("en")
         } catch (e: Exception) {
-            onError(IllegalStateException("Không tìm được model ML Kit cho tag ngôn ngữ 'vi'", e))
+            onError(IllegalStateException("Could not find ML Kit model for language tag 'en'", e))
             return
         }
         if (modelIdentifier == null) {
-            onError(IllegalStateException("ML Kit không có model Digital Ink cho tiếng Việt trên máy này"))
+            onError(IllegalStateException("ML Kit does not have a Digital Ink model for English on this device"))
             return
         }
 
@@ -52,11 +52,11 @@ class HandwritingRecognizer {
                 recognizer = DigitalInkRecognition.getClient(
                     DigitalInkRecognizerOptions.builder(builtModel).build()
                 )
-                Log.d(TAG, "Model tiếng Việt sẵn sàng (offline từ giờ trở đi)")
+                Log.d(TAG, "English model ready (offline from now on)")
                 onReady()
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "Tải model thất bại — cần WiFi cho lần đầu tiên", e)
+                Log.e(TAG, "Model download failed — WiFi required for first time", e)
                 onError(e)
             }
     }
@@ -65,7 +65,7 @@ class HandwritingRecognizer {
     fun recognize(ink: Ink, onResult: (String) -> Unit, onError: (Exception) -> Unit) {
         val r = recognizer
         if (r == null) {
-            onError(IllegalStateException("Recognizer chưa sẵn sàng — gọi setup() trước và đợi onReady"))
+            onError(IllegalStateException("Recognizer not ready — call setup() first and wait for onReady"))
             return
         }
         r.recognize(ink)
@@ -76,7 +76,7 @@ class HandwritingRecognizer {
                 onResult(text)
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "Recognition thất bại", e)
+                Log.e(TAG, "Recognition failed", e)
                 onError(e)
             }
     }
