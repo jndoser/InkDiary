@@ -61,6 +61,8 @@ class InkCanvasView @JvmOverloads constructor(
 
     private var downTimeNanos = 0L
     private val stylusOnly = true
+    private var isErasing = false
+    private val eraserRadius = 15f
 
     // --- Pause detection ---
     private val pauseHandler = Handler(Looper.getMainLooper())
@@ -91,6 +93,7 @@ class InkCanvasView @JvmOverloads constructor(
         post {
             touchHelper = TouchHelper.create(this, callback).apply {
                 setStrokeWidth(5f)
+                setOnyxStrokeStyle("PENCIL")
 
                 // Set the limit rect to the view's bounds on screen
                 val location = IntArray(2)
@@ -137,6 +140,13 @@ class InkCanvasView @JvmOverloads constructor(
         onTouchDownListener = listener
     }
 
+    private fun isEraser(event: MotionEvent): Boolean {
+        val toolType = event.getToolType(0)
+        return toolType == MotionEvent.TOOL_TYPE_ERASER ||
+                (event.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY != 0) ||
+                (event.buttonState and MotionEvent.BUTTON_STYLUS_SECONDARY != 0)
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         // Pass to Onyx hardware path for zero-lag visual feedback
         // Use cached method to eliminate reflection lag
@@ -149,8 +159,10 @@ class InkCanvasView @JvmOverloads constructor(
         }
 
         val toolType = event.getToolType(0)
+        val isEraserMode = isEraser(event)
         val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS
-        if (stylusOnly && !isStylus) return false
+        
+        if (stylusOnly && !isStylus && !isEraserMode) return false
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -158,9 +170,17 @@ class InkCanvasView @JvmOverloads constructor(
                 onTouchDownListener?.invoke()
                 pauseHandler.removeCallbacks(pauseRunnable)
                 
-                downTimeNanos = System.nanoTime()
-                currentStroke = Stroke().also { strokes.add(it) }
-                appendSample(event)
+                isErasing = isEraserMode
+                
+                if (isErasing) {
+                    setOnyxStrokeStyle("ERASER")
+                    eraseAt(event.x, event.y)
+                } else {
+                    setOnyxStrokeStyle("PENCIL")
+                    downTimeNanos = System.nanoTime()
+                    currentStroke = Stroke().also { strokes.add(it) }
+                    appendSample(event)
+                }
                 
                 // Ensure DU mode is active for this view
                 try {
@@ -171,24 +191,29 @@ class InkCanvasView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
-                for (h in 0 until event.historySize) {
-                    appendSample(event, historyIndex = h)
+                if (isErasing) {
+                    for (h in 0 until event.historySize) {
+                        eraseAt(event.getHistoricalX(h), event.getHistoricalY(h))
+                    }
+                    eraseAt(event.x, event.y)
+                } else {
+                    for (h in 0 until event.historySize) {
+                        appendSample(event, historyIndex = h)
+                    }
+                    appendSample(event)
+                    invalidate()
                 }
-                appendSample(event)
-                
-                // Fallback: If hardware rendering isn't active, we need software refresh.
-                // If hardware rendering IS active, this call is handled at a lower level
-                // and won't cause significant duplicate lag.
-                invalidate()
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                appendSample(event)
-                currentStroke = null
-                
-                // Now that the pen is up, we invalidate once to "commit" the full
-                // high-quality path to the View's canvas.
-                invalidate()
+                if (isErasing) {
+                    eraseAt(event.x, event.y)
+                    isErasing = false
+                } else {
+                    appendSample(event)
+                    currentStroke = null
+                    invalidate()
+                }
                 
                 // Safety: cancel any existing pause and restart timer
                 pauseHandler.removeCallbacks(pauseRunnable)
@@ -198,6 +223,38 @@ class InkCanvasView @JvmOverloads constructor(
             else -> return false
         }
         return true
+    }
+
+    private fun setOnyxStrokeStyle(styleNamePart: String) {
+        try {
+            val fields = TouchHelper::class.java.fields
+            val field = fields.find { it.name.contains(styleNamePart, ignoreCase = true) }
+            if (field != null) {
+                val style = field.get(null) as Int
+                touchHelper?.setStrokeStyle(style)
+            }
+        } catch (e: Exception) {}
+    }
+
+    private fun eraseAt(x: Float, y: Float) {
+        var changed = false
+        val iterator = strokes.iterator()
+        while (iterator.hasNext()) {
+            val stroke = iterator.next()
+            // Stroke eraser: if any point in the stroke is near the eraser, remove entire stroke
+            for (p in stroke.points) {
+                val dx = p.x - x
+                val dy = p.y - y
+                if (dx * dx + dy * dy < eraserRadius * eraserRadius) {
+                    iterator.remove()
+                    changed = true
+                    break
+                }
+            }
+        }
+        if (changed) {
+            invalidate()
+        }
     }
 
     private fun appendSample(event: MotionEvent, historyIndex: Int = -1) {
