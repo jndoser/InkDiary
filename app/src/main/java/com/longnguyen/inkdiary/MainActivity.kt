@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
                 } catch (e: Exception) { }
                 
                 runOnUiThread {
-                    debugText.text = "Ready. Write something and stop for 3 seconds."
+                    debugText.text = "Ready. Write something and stop for 2 seconds."
                 }
             }
         }
@@ -107,7 +107,7 @@ class MainActivity : AppCompatActivity() {
         recognizer.setup(
             onReady = {
                 runOnUiThread {
-                    debugText.text = "Ready. Write something and stop for 3 seconds."
+                    debugText.text = "Ready. Write something and stop for 2 seconds."
                 }
             },
             onError = { e ->

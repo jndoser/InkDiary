@@ -64,7 +64,7 @@ class InkCanvasView @JvmOverloads constructor(
 
     // --- Pause detection ---
     private val pauseHandler = Handler(Looper.getMainLooper())
-    private val pauseDelayMs = 4000L
+    private val pauseDelayMs = 2000L
     private var onPauseListener: (() -> Unit)? = null
     private var onTouchDownListener: (() -> Unit)? = null
     private val pauseRunnable = Runnable { onPauseListener?.invoke() }
