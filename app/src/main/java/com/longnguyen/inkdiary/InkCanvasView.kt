@@ -75,7 +75,9 @@ class InkCanvasView @JvmOverloads constructor(
 
     private fun setupTouchHelper() {
         val callback = object : RawInputCallback() {
-            override fun onBeginRawDrawing(b: Boolean, touchPoint: TouchPoint) {}
+            override fun onBeginRawDrawing(b: Boolean, touchPoint: TouchPoint) {
+                // Log.d("InkCanvasView", "Raw Drawing Started")
+            }
             override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint) {}
             override fun onRawDrawingTouchPointMoveReceived(touchPoint: TouchPoint) {}
             override fun onRawDrawingTouchPointListReceived(list: TouchPointList) {}
@@ -88,7 +90,7 @@ class InkCanvasView @JvmOverloads constructor(
         
         post {
             touchHelper = TouchHelper.create(this, callback).apply {
-                setStrokeWidth(3f)
+                setStrokeWidth(5f)
 
                 // Set the limit rect to the view's bounds on screen
                 val location = IntArray(2)
@@ -101,15 +103,24 @@ class InkCanvasView @JvmOverloads constructor(
                 setRawDrawingRenderEnabled(true)
                 
                 // Cache the touch method once to avoid reflection overhead in onTouchEvent
-                try {
-                    touchHelperMethod = try {
-                        this.javaClass.getMethod("onNotifyTouch", MotionEvent::class.java)
-                    } catch (e: Exception) {
-                        this.javaClass.getMethod("onTouch", MotionEvent::class.java)
-                    }
-                } catch (e: Exception) {
-                    Log.e("InkCanvasView", "Could not find Boox TouchHelper method", e)
+                // Different Boox SDK versions and models use different method names
+                val methodsToTry = arrayOf("onNotifyTouch", "onTouch", "onTouchEvent", "notifyTouch")
+                for (name in methodsToTry) {
+                    try {
+                        touchHelperMethod = this.javaClass.getMethod(name, MotionEvent::class.java)
+                        Log.d("InkCanvasView", "SUCCESS: Found Boox TouchHelper method: $name")
+                        break
+                    } catch (e: Exception) { }
                 }
+
+                if (touchHelperMethod == null) {
+                    Log.e("InkCanvasView", "CRITICAL: Could not find ANY Boox TouchHelper method. Handwriting will have standard Android latency.")
+                }
+
+                // Enable E-ink hardware acceleration features
+                try {
+                    EpdController.enablePost(this@InkCanvasView, 1)
+                } catch (e: Exception) {}
 
                 Log.d("InkCanvasView", "TouchHelper initialized with rect: $rect")
             }
@@ -164,9 +175,10 @@ class InkCanvasView @JvmOverloads constructor(
                     appendSample(event, historyIndex = h)
                 }
                 appendSample(event)
-                // Re-enable invalidate on MOVE as a fallback in case hardware rendering fails.
-                // On Boox, if hardware rendering IS working, this invalidate is mostly ignored
-                // by the E-ink controller in DU mode, but it's safe to have.
+                
+                // Fallback: If hardware rendering isn't active, we need software refresh.
+                // If hardware rendering IS active, this call is handled at a lower level
+                // and won't cause significant duplicate lag.
                 invalidate()
             }
 
@@ -174,7 +186,8 @@ class InkCanvasView @JvmOverloads constructor(
                 appendSample(event)
                 currentStroke = null
                 
-                // Invalidate now to "commit" the final high-quality stroke to the view
+                // Now that the pen is up, we invalidate once to "commit" the full
+                // high-quality path to the View's canvas.
                 invalidate()
                 
                 // Safety: cancel any existing pause and restart timer
