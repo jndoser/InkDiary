@@ -29,7 +29,11 @@ class InkCanvasView @JvmOverloads constructor(
 ) : View(context, attrs) {
 
     private var touchHelper: TouchHelper? = null
-    private var touchHelperMethod: java.lang.reflect.Method? = null
+    private var isTouchHelperInitialized = false
+
+    // Cache for finished strokes to keep onDraw fast O(1) instead of O(N)
+    private var canvasBitmap: android.graphics.Bitmap? = null
+    private var bitmapCanvas: android.graphics.Canvas? = null
 
     /** One recorded sample from the stylus. */
     private data class InkPoint(
@@ -78,54 +82,54 @@ class InkCanvasView @JvmOverloads constructor(
     private fun setupTouchHelper() {
         val callback = object : RawInputCallback() {
             override fun onBeginRawDrawing(b: Boolean, touchPoint: TouchPoint) {
-                // Log.d("InkCanvasView", "Raw Drawing Started")
+                Log.d("InkCanvasView", "Boox HW: onBeginRawDrawing")
             }
-            override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint) {}
+            override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint) {
+                Log.d("InkCanvasView", "Boox HW: onEndRawDrawing")
+            }
             override fun onRawDrawingTouchPointMoveReceived(touchPoint: TouchPoint) {}
             override fun onRawDrawingTouchPointListReceived(list: TouchPointList) {}
             
-            override fun onBeginRawErasing(b: Boolean, touchPoint: TouchPoint) {}
-            override fun onEndRawErasing(b: Boolean, touchPoint: TouchPoint) {}
+            override fun onBeginRawErasing(b: Boolean, touchPoint: TouchPoint) {
+                Log.d("InkCanvasView", "Boox HW: onBeginRawErasing")
+            }
+            override fun onEndRawErasing(b: Boolean, touchPoint: TouchPoint) {
+                Log.d("InkCanvasView", "Boox HW: onEndRawErasing")
+            }
             override fun onRawErasingTouchPointMoveReceived(touchPoint: TouchPoint) {}
             override fun onRawErasingTouchPointListReceived(list: TouchPointList) {}
         }
         
         post {
-            touchHelper = TouchHelper.create(this, callback).apply {
+            // Use the 3-arg create for low-latency mode (true)
+            touchHelper = TouchHelper.create(this, true, callback).apply {
+                openRawDrawing()
+                
                 setStrokeWidth(5f)
-                setOnyxStrokeStyle("PENCIL")
-
-                // Set the limit rect to the view's bounds on screen
+                setStrokeColor(Color.BLACK)
+                setStrokeStyle(1) // 1 is PENCIL
+                
                 val location = IntArray(2)
                 getLocationOnScreen(location)
                 val rect = Rect(location[0], location[1], location[0] + width, location[1] + height)
-                setLimitRect(rect, emptyList<Rect>())
+                
+                if (!rect.isEmpty) {
+                    Log.d("InkCanvasView", "Setting Limit Rect: $rect")
+                    val list = ArrayList<Rect>()
+                    list.add(rect)
+                    setLimitRect(list, ArrayList<Rect>())
+                }
 
-                openRawDrawing()
+                setRawInputReaderEnable(true)
                 setRawDrawingEnabled(true)
                 setRawDrawingRenderEnabled(true)
-                
-                // Cache the touch method once to avoid reflection overhead in onTouchEvent
-                // Different Boox SDK versions and models use different method names
-                val methodsToTry = arrayOf("onNotifyTouch", "onTouch", "onTouchEvent", "notifyTouch")
-                for (name in methodsToTry) {
-                    try {
-                        touchHelperMethod = this.javaClass.getMethod(name, MotionEvent::class.java)
-                        Log.d("InkCanvasView", "SUCCESS: Found Boox TouchHelper method: $name")
-                        break
-                    } catch (e: Exception) { }
-                }
+                setPostInputEvent(true)
+                enableFingerTouch(true)
+                setPenUpRefreshEnabled(true)
 
-                if (touchHelperMethod == null) {
-                    Log.e("InkCanvasView", "CRITICAL: Could not find ANY Boox TouchHelper method. Handwriting will have standard Android latency.")
-                }
-
-                // Enable E-ink hardware acceleration features
                 try {
                     EpdController.enablePost(this@InkCanvasView, 1)
                 } catch (e: Exception) {}
-
-                Log.d("InkCanvasView", "TouchHelper initialized with rect: $rect")
             }
         }
     }
@@ -148,15 +152,8 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Pass to Onyx hardware path for zero-lag visual feedback
-        // Use cached method to eliminate reflection lag
-        try {
-            touchHelperMethod?.invoke(touchHelper, event)
-        } catch (e: Exception) {
-            // Log once then disable if it fails
-            Log.e("InkCanvasView", "TouchHelper invoke failed", e)
-            touchHelperMethod = null
-        }
+        // We know from previous log scanning that TouchHelper doesn't have a manual touch feeding method on this SDK version.
+        // It likely handles events automatically via its own internal mechanisms once enabled.
 
         val toolType = event.getToolType(0)
         val isEraserMode = isEraser(event)
@@ -182,7 +179,7 @@ class InkCanvasView @JvmOverloads constructor(
                     appendSample(event)
                 }
                 
-                // Ensure DU mode is active for this view
+                // Ensure fast update mode is active for this view
                 try {
                     EpdController.setViewDefaultUpdateMode(this, UpdateMode.DU)
                 } catch (e: Exception) {}
@@ -201,7 +198,12 @@ class InkCanvasView @JvmOverloads constructor(
                         appendSample(event, historyIndex = h)
                     }
                     appendSample(event)
-                    invalidate()
+                    
+                    // Throttled invalidate to reduce E-ink load while writing,
+                    // but with a higher frequency (30ms) for smoother ink.
+                    if (System.currentTimeMillis() % 30 < 15) {
+                        invalidate()
+                    }
                 }
             }
 
@@ -211,11 +213,14 @@ class InkCanvasView @JvmOverloads constructor(
                     isErasing = false
                 } else {
                     appendSample(event)
+                    // Commit stroke to background cache
+                    currentStroke?.let { stroke ->
+                        bitmapCanvas?.let { bc -> drawStroke(bc, stroke) }
+                    }
                     currentStroke = null
-                    invalidate()
                 }
                 
-                // Safety: cancel any existing pause and restart timer
+                invalidate()
                 pauseHandler.removeCallbacks(pauseRunnable)
                 pauseHandler.postDelayed(pauseRunnable, pauseDelayMs)
             }
@@ -241,7 +246,6 @@ class InkCanvasView @JvmOverloads constructor(
         val iterator = strokes.iterator()
         while (iterator.hasNext()) {
             val stroke = iterator.next()
-            // Stroke eraser: if any point in the stroke is near the eraser, remove entire stroke
             for (p in stroke.points) {
                 val dx = p.x - x
                 val dy = p.y - y
@@ -253,6 +257,7 @@ class InkCanvasView @JvmOverloads constructor(
             }
         }
         if (changed) {
+            redrawCache()
             invalidate()
         }
     }
@@ -280,10 +285,48 @@ class InkCanvasView @JvmOverloads constructor(
         }
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0) {
+            canvasBitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            bitmapCanvas = android.graphics.Canvas(canvasBitmap!!)
+            redrawCache()
+        }
+    }
+
+    private fun redrawCache() {
+        val bc = bitmapCanvas ?: return
+        canvasBitmap?.eraseColor(Color.TRANSPARENT)
+        for (stroke in strokes) {
+            if (stroke != currentStroke) {
+                drawStroke(bc, stroke)
+            }
+        }
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        for (stroke in strokes) {
-            drawStroke(canvas, stroke)
+        
+        if (touchHelper != null && !isTouchHelperInitialized && width > 0) {
+            val location = IntArray(2)
+            getLocationOnScreen(location)
+            val rect = Rect(location[0], location[1], location[0] + width, location[1] + height)
+            if (!rect.isEmpty) {
+                val list = ArrayList<Rect>()
+                list.add(rect)
+                touchHelper?.setLimitRect(list, ArrayList<Rect>())
+                isTouchHelperInitialized = true
+            }
+        }
+
+        // Draw the background cache (finished strokes)
+        canvasBitmap?.let {
+            canvas.drawBitmap(it, 0f, 0f, null)
+        }
+
+        // Draw only the active stroke currently being written
+        currentStroke?.let {
+            drawStroke(canvas, it)
         }
     }
 
@@ -317,6 +360,7 @@ class InkCanvasView @JvmOverloads constructor(
         pauseHandler.removeCallbacks(pauseRunnable)
         strokes.clear()
         currentStroke = null
+        canvasBitmap?.eraseColor(Color.TRANSPARENT)
         invalidate()
     }
 
