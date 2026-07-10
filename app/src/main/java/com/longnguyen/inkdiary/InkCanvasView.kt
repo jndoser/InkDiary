@@ -70,7 +70,7 @@ class InkCanvasView @JvmOverloads constructor(
 
     // --- Pause detection ---
     private val pauseHandler = Handler(Looper.getMainLooper())
-    private val pauseDelayMs = 2000L
+    private val pauseDelayMs = 1500L
     private var onPauseListener: (() -> Unit)? = null
     private var onTouchDownListener: (() -> Unit)? = null
     private val pauseRunnable = Runnable { onPauseListener?.invoke() }
@@ -151,6 +151,8 @@ class InkCanvasView @JvmOverloads constructor(
                 (event.buttonState and MotionEvent.BUTTON_STYLUS_SECONDARY != 0)
     }
 
+    private var lastInvalidateTime = 0L
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         // We know from previous log scanning that TouchHelper doesn't have a manual touch feeding method on this SDK version.
         // It likely handles events automatically via its own internal mechanisms once enabled.
@@ -163,7 +165,6 @@ class InkCanvasView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                requestUnbufferedDispatch(event)
                 onTouchDownListener?.invoke()
                 pauseHandler.removeCallbacks(pauseRunnable)
                 
@@ -199,10 +200,12 @@ class InkCanvasView @JvmOverloads constructor(
                     }
                     appendSample(event)
                     
-                    // Throttled invalidate to reduce E-ink load while writing,
-                    // but with a higher frequency (30ms) for smoother ink.
-                    if (System.currentTimeMillis() % 30 < 15) {
+                    // Throttled invalidate: Only update the software layer every 33ms (~30fps)
+                    // This prevents overwhelming the E-ink controller.
+                    val now = System.currentTimeMillis()
+                    if (now - lastInvalidateTime > 33) {
                         invalidate()
+                        lastInvalidateTime = now
                     }
                 }
             }
@@ -324,7 +327,8 @@ class InkCanvasView @JvmOverloads constructor(
             canvas.drawBitmap(it, 0f, 0f, null)
         }
 
-        // Draw only the active stroke currently being written
+        // Draw the active stroke. 
+        // We draw it in software so there's no "gap" or "flicker" when the hardware layer commits.
         currentStroke?.let {
             drawStroke(canvas, it)
         }
@@ -333,7 +337,6 @@ class InkCanvasView @JvmOverloads constructor(
     private fun drawStroke(canvas: Canvas, stroke: Stroke) {
         val pts = stroke.points
         if (pts.size < 2) {
-            // Single tap/dot — draw a small circle so it's still visible.
             pts.firstOrNull()?.let {
                 inkPaint.style = Paint.Style.FILL
                 canvas.drawCircle(it.x, it.y, widthForPressure(it.pressure) / 2f, inkPaint)
@@ -341,11 +344,12 @@ class InkCanvasView @JvmOverloads constructor(
             }
             return
         }
+
+        // Draw individual segments. For E-ink, this is often more responsive than building a Path 
+        // because we avoid the overhead of object creation and complex path calculation every frame.
         for (i in 1 until pts.size) {
             val a = pts[i - 1]
             val b = pts[i]
-            // Width follows the pressure at the leading edge of the segment —
-            // simple approach, good enough to judge "feel" before optimizing.
             inkPaint.strokeWidth = widthForPressure(b.pressure)
             canvas.drawLine(a.x, a.y, b.x, b.y, inkPaint)
         }

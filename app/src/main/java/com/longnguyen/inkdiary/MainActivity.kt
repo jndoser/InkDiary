@@ -257,16 +257,16 @@ class MainActivity : AppCompatActivity() {
                     val llmName = getActiveLLMName()
                     runOnUiThread { debugText.text = "Asking $llmName..." }
 
-                    if (!isOnline()) {
-                        runOnUiThread {
-                            debugText.text = "Offline. Please connect to WiFi."
-                            replyView.visibility = View.VISIBLE
-                            replyView.setTextAndAnimate("Offline. Please connect to WiFi to ask $llmName.")
-                        }
-                        return@recognize
-                    }
-
                     lifecycleScope.launch {
+                        if (!withContext(Dispatchers.IO) { isOnline() }) {
+                            runOnUiThread {
+                                debugText.text = "Offline. Please connect to WiFi."
+                                replyView.visibility = View.VISIBLE
+                                replyView.setTextAndAnimate("Offline. Please connect to WiFi to ask $llmName.")
+                            }
+                            return@launch
+                        }
+
                         val today = getTodayDate()
                         val conversationDao = database.conversationDao()
                         val historyEntries = withContext(Dispatchers.IO) {
