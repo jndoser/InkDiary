@@ -27,17 +27,15 @@
         android:src="@android:drawable/ic_menu_recent_history"
         android:contentDescription="History" />
 
-    <!-- DEBUG ONLY for step 2: shows what ML Kit recognized, so you can
-         judge accuracy directly without digging through Logcat.
-         This gets removed once we wire up Gemini and the handwritten reply. -->
     <TextView
         android:id="@+id/debugRecognizedText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="#DDDDDD"
+        android:background="#333333"
+        android:textColor="#FFFFFF"
         android:padding="12dp"
         android:textSize="16sp"
-        android:text="" />
+        android:text="Ready" />
 
 </FrameLayout>

@@ -30,6 +30,8 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.os.Handler
 import android.os.Looper
+import android.graphics.PixelFormat
+import android.graphics.Color
 
 class MainActivity : AppCompatActivity() {
 
@@ -181,6 +183,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Match the background for ZOrderOnTop transparency
+        window.setBackgroundDrawableResource(android.R.color.white)
+        
         setContentView(R.layout.activity_main)
 
         inkCanvas = findViewById(R.id.inkCanvas)
@@ -189,8 +195,12 @@ class MainActivity : AppCompatActivity() {
         database = AppDatabase.getDatabase(this)
 
         debugText.visibility = if (Config.isDebugEnabled(this)) View.VISIBLE else View.GONE
-
-        setupLLM()
+        debugText.setTextColor(Color.WHITE)
+        debugText.text = "Initializing..."
+        
+        try {
+            EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC)
+        } catch (e: Exception) {}
 
         findViewById<View>(R.id.btnHistory).setOnClickListener {
             val intent = android.content.Intent(this, HistoryActivity::class.java)
@@ -238,31 +248,60 @@ class MainActivity : AppCompatActivity() {
         inkCanvas.setOnPauseListener {
             if (!inkCanvas.hasContent()) return@setOnPauseListener
             
-            debugText.text = "Recognizing..."
+            runOnUiThread {
+                debugText.visibility = View.VISIBLE
+                debugText.text = "Recognizing..."
+            }
             val ink = inkCanvas.exportInk()
 
             recognizer.recognize(
                 ink,
                 onResult = { text ->
+                    Log.d("MainActivity", "onResult callback triggered with text: '$text'")
+                    
+                    // 1. Immediately update UI before ANY network/processing happens
+                    runOnUiThread {
+                        if (text.isBlank()) {
+                            debugText.text = "No text recognized"
+                        } else {
+                            debugText.text = "Recognized: \"$text\""
+                        }
+                        debugText.setBackgroundColor(Color.parseColor("#333333"))
+                        
+                        // 2. Clear the ink immediately so the user knows it's accepted
+                        inkCanvas.clearAll()
+                        
+                        try {
+                            EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.DU)
+                            debugText.invalidate()
+                        } catch(e:Exception){}
+                    }
+
                     if (text.isBlank()) {
-                        runOnUiThread { 
-                            debugText.text = "(No text recognized)"
+                        runOnUiThread {
                             replyView.visibility = View.VISIBLE
                             replyView.setTextAndAnimate("(Could not recognize handwriting)")
                         }
                         return@recognize
                     }
 
-                    Log.d("MainActivity", "Recognized text: $text")
                     val llmName = getActiveLLMName()
-                    runOnUiThread { debugText.text = "Asking $llmName..." }
+                    Log.d("MainActivity", "Recognized text: '$text'. Using $llmName")
 
                     lifecycleScope.launch {
+                        // Show status that we are now calling the API
+                        runOnUiThread {
+                            debugText.text = "Recognized: \"$text\"\n(Thinking...)"
+                            // Show thinking message in the main area
+                            replyView.visibility = View.VISIBLE
+                            replyView.setTextAndAnimate("Thinking...")
+                        }
+
                         if (!withContext(Dispatchers.IO) { isOnline() }) {
                             runOnUiThread {
-                                debugText.text = "Offline. Please connect to WiFi."
+                                debugText.text = "Recognized: \"$text\"\n(Offline)"
                                 replyView.visibility = View.VISIBLE
-                                replyView.setTextAndAnimate("Offline. Please connect to WiFi to ask $llmName.")
+                                replyView.setTextAndAnimate("I'm offline. Please check your WiFi connection.")
                             }
                             return@launch
                         }
@@ -273,28 +312,41 @@ class MainActivity : AppCompatActivity() {
                             conversationDao.getConversationsByDate(today)
                         }
                         
-                        val history = historyEntries.map { entry ->
-                            ChatMessage(entry.role, entry.content)
-                        }
+                        val history = historyEntries.map { entry -> ChatMessage(entry.role, entry.content) }
 
-                        val response = llmService.generateResponse(text, history)
+                        val response = llmService.generateResponse(text, history) ?: "API_ERROR: No response"
 
-                        if (response != null) {
+                        if (!response.startsWith("API_ERROR:")) {
+                            // Success path
                             withContext(Dispatchers.IO) {
                                 conversationDao.insert(ConversationEntry(date = today, role = "user", content = text))
                                 conversationDao.insert(ConversationEntry(date = today, role = "model", content = response))
                             }
                             runOnUiThread {
-                                inkCanvas.clearAll()
-                                debugText.text = "AI: $response"
+                                Log.d("MainActivity", "Updating UI with AI response")
+                                debugText.text = "Recognized: \"$text\"" // Keep the recognized text clean
                                 replyView.visibility = View.VISIBLE
                                 replyView.setTextAndAnimate(response)
+                                try { EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC); debugText.invalidate() } catch(e:Exception){}
                             }
                         } else {
+                            // Error path
+                            val userFriendlyError = response.removePrefix("API_ERROR: ")
+                            Log.e("MainActivity", "AI Error: $userFriendlyError")
                             runOnUiThread {
-                                debugText.text = "Error calling $llmName"
+                                debugText.setBackgroundColor(Color.RED)
+                                debugText.text = "Recognized: \"$text\"\nERROR: $userFriendlyError"
                                 replyView.visibility = View.VISIBLE
-                                replyView.setTextAndAnimate("Error calling $llmName. Please try again.")
+                                replyView.setTextAndAnimate("I encountered an error: $userFriendlyError")
+                                
+                                handler.postDelayed({
+                                    try { 
+                                        EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC)
+                                        debugText.invalidate() 
+                                    } catch(e:Exception){}
+                                }, 500)
+
+                                Toast.makeText(this@MainActivity, "AI Error: $userFriendlyError", Toast.LENGTH_LONG).show()
                             }
                         }
                     }

@@ -47,6 +47,15 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            pickFirsts += "lib/**/libc++_shared.so"
+        }
+    }
 }
 
 dependencies {
@@ -68,11 +77,11 @@ dependencies {
         exclude(group = "com.tencent", module = "mmkv")
         exclude(group = "org.apache.commons.io", module = "commonsIO")
     }
-    implementation("com.onyx.android.sdk:onyxsdk-pen:1.2.1") {
+    implementation("com.onyx.android.sdk:onyxsdk-pen:1.5.4") {
         exclude(group = "com.tencent", module = "mmkv")
         exclude(group = "org.apache.commons.io", module = "commonsIO")
     }
-    implementation("com.onyx.android.sdk:onyxsdk-base:1.5.8") {
+    implementation("com.onyx.android.sdk:onyxsdk-base:1.8.5") {
         exclude(group = "com.tencent", module = "mmkv")
         exclude(group = "org.apache.commons.io", module = "commonsIO")
     }
@@ -84,4 +93,7 @@ dependencies {
     // Networking & JSON
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
+
+    // Hidden API Bypass
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
 }

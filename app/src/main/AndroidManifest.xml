@@ -8,11 +8,16 @@
     <uses-permission android:name="com.onyx.permission.DEVICE_CONTROL" />
 
     <application
+        android:name=".DiaryApplication"
         android:allowBackup="true"
         android:label="Ink Diary"
         android:theme="@style/Theme.InkDiary"
         android:supportsRtl="true"
         tools:replace="android:label">
+
+        <!-- Tell Boox firmware to allow this app to use high-speed refresh modes -->
+        <meta-data android:name="onyx_screen_update_mode" android:value="1" />
+        <meta-data android:name="com.onyx.android.sdk.api.device.epd.EpdController.UpdateMode" android:value="1" />
 
         <activity
             android:name=".MainActivity"

@@ -12,12 +12,17 @@ private const val TAG = "GeminiService"
 class GeminiService(apiKey: String) : LLMService {
     private val cleanedKey = apiKey.trim()
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-flash",
+        modelName = "gemini-1.5-pro",
         apiKey = cleanedKey,
         systemInstruction = content { text("You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. Respond in the language the user uses, but if you're unsure, use English. You have memory of what the user wrote earlier today.") }
     )
 
     override suspend fun generateResponse(prompt: String, history: List<ChatMessage>): String? = withContext(Dispatchers.IO) {
+        if (cleanedKey.isBlank()) {
+            Log.e(TAG, "Gemini Error: API Key is missing")
+            return@withContext "Error: Gemini API Key is missing."
+        }
+        
         try {
             val googleHistory = history.map { 
                 content(it.role) { text(it.content) }
@@ -26,11 +31,21 @@ class GeminiService(apiKey: String) : LLMService {
             val chat = generativeModel.startChat(googleHistory)
             val response = chat.sendMessage(prompt)
             val text = response.text
+            
+            if (text == null) {
+                Log.e(TAG, "Gemini Error: Response text was null")
+                return@withContext "API_ERROR: Received empty response from Google."
+            }
+            
             Log.d(TAG, "Gemini Response: $text")
             text
         } catch (e: Exception) {
             Log.e(TAG, "Gemini Error: ${e.message}", e)
-            null
+            val errorMsg = e.message ?: "Unknown error"
+            if (errorMsg.contains("blocked", ignoreCase = true)) {
+                return@withContext "API_ERROR: Google API is blocked. Check your API key or region (VPN might be needed)."
+            }
+            "API_ERROR: ${e.localizedMessage}"
         }
     }
 }

@@ -33,14 +33,14 @@ class SambaNovaService(private val apiKey: String) : LLMService {
 
         var currentRetry = 0
         val maxRetries = 3
-        var backoffMs = 2000L
+        var backoffMs = 3000L
 
         while (currentRetry < maxRetries) {
             Log.d(TAG, "Calling SambaNova (Attempt ${currentRetry + 1}) with prompt: $prompt")
 
             try {
                 val messages = mutableListOf<SambaMessage>()
-                messages.add(SambaMessage("system", "You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. Respond in the language the user uses, but if you're unsure, use English."))
+                messages.add(SambaMessage("system", "You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. Respond in the language the user uses, but if you're unsure, use English. You have memory of what the user wrote earlier today."))
                 
                 history.forEach { 
                     val role = if (it.role == "user") "user" else "assistant"
@@ -84,15 +84,15 @@ class SambaNovaService(private val apiKey: String) : LLMService {
                             currentRetry++
                             return@use // continue loop
                         } else {
-                            return@withContext null
+                            return@withContext "API_ERROR: SambaNova Error ${response.code}"
                         }
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "SambaNova Exception: ${e.message}", e)
-                return@withContext null
+                return@withContext "API_ERROR: Connection failed: ${e.localizedMessage}"
             }
         }
-        null
+        "API_ERROR: Rate limit exceeded after retries."
     }
 }
