@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private val recognizer = HandwritingRecognizer()
     private lateinit var llmService: LLMService
     private lateinit var database: AppDatabase
+    private var currentSessionId = 0
     private var tapCount = 0
     private val handler = Handler(Looper.getMainLooper())
     private val tapRunnable = Runnable {
@@ -53,6 +54,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var recognizerIsReady = false
+
+    // True whenever the AI response area is active (thinking, streaming, done, or error)
+    // Used to decide whether stylus-down should trigger a clear for new input
+    private var isShowingAiContent = false
 
     private fun getTodayDate(): String {
         return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
@@ -169,14 +174,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.actionMasked == MotionEvent.ACTION_UP) {
-            val isFinger = ev.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER
-            if (isFinger) {
-                tapCount++
-                Log.d("MultiTap", "Tap counted: $tapCount")
-                handler.removeCallbacks(tapRunnable)
-                handler.postDelayed(tapRunnable, 600)
-            }
+        // Finger tap detection (3 taps = API key dialog, 4 taps = debug toggle)
+        if (ev.actionMasked == MotionEvent.ACTION_UP && ev.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
+            tapCount++
+            Log.d("MultiTap", "Tap counted: $tapCount")
+            handler.removeCallbacks(tapRunnable)
+            handler.postDelayed(tapRunnable, 600)
         }
         return super.dispatchTouchEvent(ev)
     }
@@ -210,20 +213,36 @@ class MainActivity : AppCompatActivity() {
         // Ensure replyView is hidden initially
         replyView.visibility = View.GONE
 
-        // Step 5: Clear and Full Refresh on pen-down
+        // Stylus nib down → clear the AI response so the user can write fresh.
+        // NOTE: All Onyx RawInputCallback methods run on the MAIN thread on Boox (confirmed
+        // via logcat: PID==TID). So the listener is called on the main thread — no post{}
+        // needed, but runOnUiThread{} is kept as a safe guard (it's a no-op on main thread).
+        //
+        // We use clearAll() (not clearForNewSession()) because clearAll() calls
+        // touchHelper.setRawDrawingEnabled(false/true) which resets the Onyx raw drawing
+        // overlay — essential for clearing ghost pixels from the e-ink screen.
         inkCanvas.setOnTouchDownListener {
-            Log.d("MainActivity", "Touch Down detected")
-            if (replyView.visibility == View.VISIBLE) {
-                Log.d("MainActivity", "Clearing previous session to start new one")
+            if (isShowingAiContent) {
+                Log.d("MainActivity", "Stylus nib down — clearing AI response for new input")
+                isShowingAiContent = false
+                currentSessionId++
+
+                // 1. Hide the AI response layers IMMEDIATELY in the software UI
                 replyView.clear()
                 replyView.visibility = View.GONE
-                inkCanvas.clearAll()
-                try {
-                    EpdController.setViewDefaultUpdateMode(inkCanvas, UpdateMode.DU)
-                } catch (e: Exception) { }
-                runOnUiThread {
-                    debugText.text = "Ready. Write something and stop for 2 seconds."
+
+                // 2. Clear status bar
+                if (Config.isDebugEnabled(this@MainActivity)) {
+                    debugText.text = "Ready"
+                    debugText.setBackgroundColor(Color.parseColor("#333333"))
+                } else {
+                    debugText.text = ""
+                    debugText.visibility = View.GONE
                 }
+
+                // 3. Perform the hardware clear and refresh
+                // We use a single call that handles both the buffer clearing and the E-ink flash
+                inkCanvas.clearAll()
             }
         }
 
@@ -246,18 +265,29 @@ class MainActivity : AppCompatActivity() {
 
         // Ink recognition flow
         inkCanvas.setOnPauseListener {
-            if (!inkCanvas.hasContent()) return@setOnPauseListener
+            Log.d("MainActivity", "Pause detected, checking content...")
+            if (!inkCanvas.hasContent()) {
+                Log.d("MainActivity", "No content to recognize")
+                return@setOnPauseListener
+            }
             
             runOnUiThread {
                 debugText.visibility = View.VISIBLE
                 debugText.text = "Recognizing..."
+                isShowingAiContent = true
             }
+            val sessionId = ++currentSessionId
             val ink = inkCanvas.exportInk()
 
+            Log.d("MainActivity", "Calling ML Kit recognizer...")
             recognizer.recognize(
                 ink,
                 onResult = { text ->
-                    Log.d("MainActivity", "onResult callback triggered with text: '$text'")
+                    if (sessionId != currentSessionId) {
+                        Log.d("MainActivity", "Ignoring stale recognition result")
+                        return@recognize
+                    }
+                    Log.d("MainActivity", "ML Kit result: '$text'")
                     
                     // 1. Immediately update UI before ANY network/processing happens
                     runOnUiThread {
@@ -281,6 +311,7 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             replyView.visibility = View.VISIBLE
                             replyView.setTextAndAnimate("(Could not recognize handwriting)")
+                            isShowingAiContent = true
                         }
                         return@recognize
                     }
@@ -295,13 +326,16 @@ class MainActivity : AppCompatActivity() {
                             // Show thinking message in the main area
                             replyView.visibility = View.VISIBLE
                             replyView.setTextAndAnimate("Thinking...")
+                            isShowingAiContent = true
                         }
 
                         if (!withContext(Dispatchers.IO) { isOnline() }) {
                             runOnUiThread {
+                                if (sessionId != currentSessionId) return@runOnUiThread
                                 debugText.text = "Recognized: \"$text\"\n(Offline)"
                                 replyView.visibility = View.VISIBLE
                                 replyView.setTextAndAnimate("I'm offline. Please check your WiFi connection.")
+                                isShowingAiContent = true
                             }
                             return@launch
                         }
@@ -316,6 +350,11 @@ class MainActivity : AppCompatActivity() {
 
                         val response = llmService.generateResponse(text, history) ?: "API_ERROR: No response"
 
+                        if (sessionId != currentSessionId) {
+                            Log.d("MainActivity", "Ignoring stale AI response")
+                            return@launch
+                        }
+
                         if (!response.startsWith("API_ERROR:")) {
                             // Success path
                             withContext(Dispatchers.IO) {
@@ -327,6 +366,7 @@ class MainActivity : AppCompatActivity() {
                                 debugText.text = "Recognized: \"$text\"" // Keep the recognized text clean
                                 replyView.visibility = View.VISIBLE
                                 replyView.setTextAndAnimate(response)
+                                isShowingAiContent = true
                                 try { EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC); debugText.invalidate() } catch(e:Exception){}
                             }
                         } else {
@@ -338,6 +378,7 @@ class MainActivity : AppCompatActivity() {
                                 debugText.text = "Recognized: \"$text\"\nERROR: $userFriendlyError"
                                 replyView.visibility = View.VISIBLE
                                 replyView.setTextAndAnimate("I encountered an error: $userFriendlyError")
+                                isShowingAiContent = true
                                 
                                 handler.postDelayed({
                                     try { 
@@ -345,14 +386,15 @@ class MainActivity : AppCompatActivity() {
                                         debugText.invalidate() 
                                     } catch(e:Exception){}
                                 }, 500)
-
-                                Toast.makeText(this@MainActivity, "AI Error: $userFriendlyError", Toast.LENGTH_LONG).show()
                             }
                         }
                     }
                 },
                 onError = { e ->
-                    runOnUiThread { debugText.text = "Recognition error: ${e.message}" }
+                    runOnUiThread { 
+                        if (sessionId != currentSessionId) return@runOnUiThread
+                        debugText.text = "Recognition error: ${e.message}" 
+                    }
                 }
             )
         }
