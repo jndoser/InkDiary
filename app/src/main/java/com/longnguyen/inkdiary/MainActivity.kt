@@ -11,7 +11,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.google.ai.client.generativeai.type.content
 import com.longnguyen.inkdiary.data.AppDatabase
 import com.longnguyen.inkdiary.data.ConversationEntry
 import com.onyx.android.sdk.api.device.epd.EpdController
@@ -184,6 +183,7 @@ class MainActivity : AppCompatActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -213,7 +213,7 @@ class MainActivity : AppCompatActivity() {
         // Ensure replyView is hidden initially
         replyView.visibility = View.GONE
 
-        // Stylus nib down → clear the AI response so the user can write fresh.
+    // Stylus nib down → clear the AI response so the user can write fresh.
         // NOTE: All Onyx RawInputCallback methods run on the MAIN thread on Boox (confirmed
         // via logcat: PID==TID). So the listener is called on the main thread — no post{}
         // needed, but runOnUiThread{} is kept as a safe guard (it's a no-op on main thread).

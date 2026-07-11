@@ -48,7 +48,7 @@ class InkCanvasView @JvmOverloads constructor(
     private var onPauseListener: (() -> Unit)? = null
     private var onTouchDownListener: (() -> Unit)? = null
     private var isInteractionEnabled = true
-    private val pauseRunnable = Runnable { 
+    private val pauseRunnable = Runnable {
         Log.d("InkCanvasView", "pauseRunnable executing...")
         onPauseListener?.invoke() 
     }
@@ -73,7 +73,7 @@ class InkCanvasView @JvmOverloads constructor(
                 getLocationOnScreen(viewLocation)
                 // Fire synchronously — this is the primary nib-down hook on Boox/Onyx
                 onTouchDownListener?.invoke()
-                try { 
+                try {
                     EpdDeviceManager.enterAnimationUpdate(true)
                     enableNativeEraser()
                     touchHelper?.setStrokeStyle(0)
@@ -312,8 +312,7 @@ class InkCanvasView @JvmOverloads constructor(
         currentStroke = null
         canvasBitmap?.eraseColor(Color.TRANSPARENT)
         
-        // Force clear the Onyx hardware raw input overlay.
-        // Toggling this is necessary to remove "raw" ink pixels instantly.
+        // Force clear the Onyx raw input layer
         try {
             touchHelper?.setRawDrawingEnabled(false)
             touchHelper?.setRawDrawingEnabled(true)
@@ -321,8 +320,6 @@ class InkCanvasView @JvmOverloads constructor(
             Log.e("InkCanvasView", "Failed to toggle raw drawing: ${e.message}")
         }
 
-        // Trigger a Global Clear (GC) refresh to remove ghosting and UI elements.
-        // We do this via the SurfaceHolder to ensure it syncs with our transparent bitmap.
         drawSurface(UpdateMode.GC)
     }
 

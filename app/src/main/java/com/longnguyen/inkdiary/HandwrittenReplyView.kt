@@ -141,7 +141,6 @@ class HandwrittenReplyView @JvmOverloads constructor(
         fullText = ""
         displayedText = ""
         lines.clear()
-        // No local GC here, we let the main canvas handle the global GC for better synchronization
         invalidate()
     }
 }
