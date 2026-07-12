@@ -1,6 +1,7 @@
 package com.longnguyen.inkdiary
 
 import android.content.Context
+import android.util.Log
 
 object Config {
     private const val PREFS_NAME = "ink_diary_prefs"
@@ -14,24 +15,41 @@ object Config {
 
     fun getGeminiApiKey(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedKey = prefs.getString(KEY_GEMINI_API, null)
-        return if (!savedKey.isNullOrBlank()) savedKey else BuildConfig.GEMINI_API_KEY
+        val saved = prefs.getString(KEY_GEMINI_API, "") ?: ""
+        val result = if (saved.isNotBlank()) saved else BuildConfig.GEMINI_API_KEY
+        Log.d("Config", "getGeminiApiKey: result=${if(result.length > 5) result.take(5) + "..." else result} (saved=$saved, build=${BuildConfig.GEMINI_API_KEY})")
+        return result
     }
 
     fun saveGeminiApiKey(context: Context, key: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_GEMINI_API, key.trim()).apply()
+        val trimmed = key.trim()
+        Log.d("Config", "saveGeminiApiKey: '$trimmed'")
+        // Only save if it's different from the BuildConfig key to keep prefs clean
+        if (trimmed == BuildConfig.GEMINI_API_KEY) {
+            prefs.edit().remove(KEY_GEMINI_API).apply()
+        } else {
+            prefs.edit().putString(KEY_GEMINI_API, trimmed).apply()
+        }
     }
 
     fun getSambaNovaApiKey(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedKey = prefs.getString(KEY_SAMBANOVA_API, null)
-        return if (!savedKey.isNullOrBlank()) savedKey else BuildConfig.SAMBANOVA_API_KEY
+        val saved = prefs.getString(KEY_SAMBANOVA_API, "") ?: ""
+        val result = if (saved.isNotBlank()) saved else BuildConfig.SAMBANOVA_API_KEY
+        Log.d("Config", "getSambaNovaApiKey: result=${if(result.length > 5) result.take(5) + "..." else result} (saved=$saved, build=${BuildConfig.SAMBANOVA_API_KEY})")
+        return result
     }
 
     fun saveSambaNovaApiKey(context: Context, key: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_SAMBANOVA_API, key.trim()).apply()
+        val trimmed = key.trim()
+        Log.d("Config", "saveSambaNovaApiKey: '$trimmed'")
+        if (trimmed == BuildConfig.SAMBANOVA_API_KEY) {
+            prefs.edit().remove(KEY_SAMBANOVA_API).apply()
+        } else {
+            prefs.edit().putString(KEY_SAMBANOVA_API, trimmed).apply()
+        }
     }
 
     fun getPreferredLLM(context: Context): String {

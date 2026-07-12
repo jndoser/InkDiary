@@ -48,6 +48,19 @@ class InkCanvasView @JvmOverloads constructor(
     private var onPauseListener: (() -> Unit)? = null
     private var onTouchDownListener: (() -> Unit)? = null
     private var isInteractionEnabled = true
+    // When clearAll() is triggered from a nib-down event, we need to suppress
+    // enterAnimationUpdate() for the next 2 onBeginRawDrawing callbacks:
+    //  #1 = the real nib-down callback (currently executing)
+    //  #2 = the one fired by setRawDrawingEnabled(false/true) toggle (~48ms later)
+    // If enterAnimationUpdate is called in either one, it cancels the GC refresh.
+    // Counter starts at 2, each callback decrements it; when it hits 0 we schedule
+    // enterAnimationUpdate() after a 200ms delay so GC has time to complete first.
+    @Volatile private var gcSuppressCount = 0
+    // Tracks whether the last interaction was an erase operation.
+    // When true, onBeginRawDrawing will do an extra overlay reset to clear
+    // lingering eraser ghost marks from the Onyx raw drawing layer.
+    @Volatile private var wasErasing = false
+
     private val pauseRunnable = Runnable {
         Log.d("InkCanvasView", "pauseRunnable executing...")
         onPauseListener?.invoke() 
@@ -68,18 +81,53 @@ class InkCanvasView @JvmOverloads constructor(
     private fun setupTouchHelper() {
         val callback = object : RawInputCallback() {
             override fun onBeginRawDrawing(b: Boolean, touchPoint: TouchPoint) {
+                // Fire synchronously — this is the primary nib-down hook on Boox/Onyx.
+                // We call this BEFORE checking isInteractionEnabled so that we can clear
+                // the "Thinking" state and re-enable interaction.
+                onTouchDownListener?.invoke()
+
                 if (!isInteractionEnabled) return
                 lastProcessedTimestamp = -1L
                 getLocationOnScreen(viewLocation)
-                // Fire synchronously — this is the primary nib-down hook on Boox/Onyx
-                onTouchDownListener?.invoke()
                 try {
-                    EpdDeviceManager.enterAnimationUpdate(true)
+                    // If the previous interaction was an erase, force-clear the Onyx raw
+                    // drawing overlay to remove lingering eraser ghost marks (the thick
+                    // strike-through lines) before starting a new drawing stroke.
+                    if (wasErasing) {
+                        wasErasing = false
+                        Log.d("InkCanvasView", "Transitioning from eraser → draw: resetting overlay")
+                        touchHelper?.setRawDrawingEnabled(false)
+                        touchHelper?.setRawDrawingEnabled(true)
+                    }
+
+                    val suppressCount = gcSuppressCount
+                    if (suppressCount > 0) {
+                        // A GC clear is in progress. Don't call enterAnimationUpdate now —
+                        // it would cancel the GC refresh and ghost pixels would remain.
+                        gcSuppressCount = suppressCount - 1
+                        if (gcSuppressCount == 0) {
+                            // This is the last suppressed callback. Schedule enterAnimationUpdate
+                            // after 500ms so the GC has time to physically complete.
+                            postDelayed({
+                                try { EpdDeviceManager.enterAnimationUpdate(true) } catch (e: Exception) {}
+                                Log.d("InkCanvasView", "enterAnimationUpdate fired after GC delay")
+                            }, 500)
+                        }
+                        Log.d("InkCanvasView", "Drawing started (GC suppress #$suppressCount remaining)")
+                    } else {
+                        EpdDeviceManager.enterAnimationUpdate(true)
+                        Log.d("InkCanvasView", "Drawing started")
+                    }
                     enableNativeEraser()
                     touchHelper?.setStrokeStyle(0)
                     touchHelper?.setStrokeWidth(4f)
+
+                    // CRITICAL FIX: Re-enable raw drawing RENDER explicitly.
+                    // When clearAll() toggles setRawDrawingEnabled(false/true), 
+                    // some Onyx firmware versions default to RENDER=FALSE, causing 
+                    // the "invisible ink" at the start of the stroke.
+                    touchHelper?.setRawDrawingRenderEnabled(true)
                 } catch (e: Exception) {}
-                Log.d("InkCanvasView", "Drawing started")
             }
 
             override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint) {
@@ -103,6 +151,9 @@ class InkCanvasView @JvmOverloads constructor(
             }
 
             override fun onBeginRawErasing(b: Boolean, touchPoint: TouchPoint) {
+                // Fire synchronously to clear AI response even if using the eraser
+                onTouchDownListener?.invoke()
+
                 pauseHandler.removeCallbacks(pauseRunnable)
                 getLocationOnScreen(viewLocation)
                 currentStroke = null
@@ -118,11 +169,23 @@ class InkCanvasView @JvmOverloads constructor(
             
             override fun onEndRawErasing(b: Boolean, touchPoint: TouchPoint) {
                 try { EpdDeviceManager.exitAnimationUpdate(true) } catch (e: Exception) {}
+                // Mark that we were erasing so onBeginRawDrawing can do a
+                // clean overlay reset before the next drawing stroke.
+                wasErasing = true
                 post { 
-                    // Clear raw drawing overlay
+                    // Reset stroke params to drawing mode BEFORE toggling
+                    // setRawDrawingEnabled — this ensures the Onyx overlay is
+                    // re-initialized with drawing params, not the thick eraser style.
+                    try {
+                        touchHelper?.setStrokeStyle(0)
+                        touchHelper?.setStrokeWidth(4f)
+                    } catch (e: Exception) {}
+
+                    // Clear raw drawing overlay (removes the eraser ghost line)
                     try {
                         touchHelper?.setRawDrawingEnabled(false)
                         touchHelper?.setRawDrawingEnabled(true)
+                        touchHelper?.setRawDrawingRenderEnabled(true)
                         enableNativeEraser() 
                     } catch (e: Exception) {}
 
@@ -130,7 +193,7 @@ class InkCanvasView @JvmOverloads constructor(
                     drawSurface(UpdateMode.DU)
                     pauseHandler.removeCallbacks(pauseRunnable)
                     pauseHandler.postDelayed(pauseRunnable, pauseDelayMs)
-                    Log.d("InkCanvasView", "Erasing ended, pause timer started")
+                    Log.d("InkCanvasView", "Erasing ended, stroke params reset, pause timer started")
                 }
             }
 
@@ -200,8 +263,6 @@ class InkCanvasView @JvmOverloads constructor(
 
         if (currentStroke == null) {
             currentStroke = Stroke().also { strokes.add(it) }
-            // Fallback: also fire synchronously here in case onBeginRawDrawing didn't fire
-            onTouchDownListener?.invoke()
             Log.d("InkCanvasView", "Starting new stroke at ($x, $y)")
         }
 
@@ -209,20 +270,27 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!isInteractionEnabled) return false
-
         val toolType = event.getToolType(0)
+        val isStylus = toolType == MotionEvent.TOOL_TYPE_STYLUS
 
-        // For stylus nib: fire the listener on ACTION_DOWN directly (no Onyx SDK involved)
-        if (toolType == MotionEvent.TOOL_TYPE_STYLUS && event.actionMasked == MotionEvent.ACTION_DOWN) {
+        // Stylus or Finger ACTION_DOWN: Trigger the listener to clear AI response.
+        // We do this BEFORE the interaction check so it works even when interaction is disabled.
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             pauseHandler.removeCallbacks(pauseRunnable)
             getLocationOnScreen(viewLocation)
+            Log.d("InkCanvasView", "Touch/Stylus DOWN in onTouchEvent (tool=${event.getToolType(0)})")
             onTouchDownListener?.invoke()
         }
 
-        if (touchHelper != null && touchHelper!!.onTouchEvent(event)) {
-            return true
+        // We MUST pass stylus events to touchHelper so its internal callbacks fire.
+        // The hardware drawing itself is blocked inside onBeginRawDrawing by isInteractionEnabled.
+        if (touchHelper != null && (isStylus || isInteractionEnabled)) {
+            if (touchHelper!!.onTouchEvent(event)) {
+                return true
+            }
         }
+
+        if (!isInteractionEnabled) return false
 
         val isEraser = toolType == MotionEvent.TOOL_TYPE_ERASER
         if (isEraser) {
@@ -258,6 +326,10 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     private fun drawSurface(mode: UpdateMode = UpdateMode.DU) {
+        // Set mode BEFORE posting the canvas so the e-ink display uses the correct
+        // waveform for THIS frame, not the next one.
+        try { EpdController.setViewDefaultUpdateMode(this, mode) } catch (e: Exception) {}
+
         val canvas = try {
             holder.lockHardwareCanvas()
         } catch (e: Exception) {
@@ -271,7 +343,6 @@ class InkCanvasView @JvmOverloads constructor(
         } finally {
             holder.unlockCanvasAndPost(canvas)
         }
-        try { EpdController.setViewDefaultUpdateMode(this, mode) } catch (e: Exception) {}
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {}
@@ -305,19 +376,62 @@ class InkCanvasView @JvmOverloads constructor(
         }
     }
 
-    fun clearAll() {
-        Log.d("InkCanvasView", "clearAll called")
-        pauseHandler.removeCallbacks(pauseRunnable)
-        strokes.clear()
-        currentStroke = null
-        canvasBitmap?.eraseColor(Color.TRANSPARENT)
-        
-        // Force clear the Onyx raw input layer
+    fun bounceTouchHelper() {
         try {
             touchHelper?.setRawDrawingEnabled(false)
             touchHelper?.setRawDrawingEnabled(true)
         } catch (e: Exception) {
-            Log.e("InkCanvasView", "Failed to toggle raw drawing: ${e.message}")
+            Log.e("InkCanvasView", "Failed to bounce raw drawing: ${e.message}")
+        }
+    }
+
+    // suppressAnimationForGc = true when called from the nib-down listener (erasing AI response).
+    // This sets gcSuppressCount=2 to block enterAnimationUpdate in the next two
+    // onBeginRawDrawing callbacks, preventing the GC refresh from being cancelled.
+    fun clearAll(suppressAnimationForGc: Boolean = false) {
+        Log.d("InkCanvasView", "clearAll called (suppressAnim=$suppressAnimationForGc)")
+        
+        if (suppressAnimationForGc) {
+            // SET THIS FIRST! Before exiting animation or clearing bitmap.
+            // We use 2 to handle both the current nib-down and any potential
+            // callback from a setInteractionEnabled(true) call in MainActivity.
+            gcSuppressCount = 2
+        }
+
+        pauseHandler.removeCallbacks(pauseRunnable)
+        strokes.clear()
+        currentStroke = null
+        canvasBitmap?.eraseColor(Color.TRANSPARENT)
+
+        // Exit animation mode first so the GC refresh below isn't immediately
+        // overridden by enterAnimationUpdate() in onBeginRawDrawing.
+        try { EpdDeviceManager.exitAnimationUpdate(true) } catch (e: Exception) {}
+
+        if (!suppressAnimationForGc) {
+            // Immediate toggle when NOT in a nib-down event.
+            try {
+                touchHelper?.setRawDrawingEnabled(false)
+                touchHelper?.setRawDrawingEnabled(true)
+            } catch (e: Exception) {
+                Log.e("InkCanvasView", "Failed to toggle raw drawing: ${e.message}")
+            }
+        } else {
+            // When called from nib-down (suppressed mode), we can't toggle immediately
+            // because it causes "invisible ink". Instead, schedule the toggle AFTER
+            // the GC refresh has physically completed on the e-ink panel (~600ms).
+            // This ensures the Onyx raw drawing overlay is properly reset, which is
+            // critical for physically clearing the AI response text from the screen.
+            postDelayed({
+                try {
+                    touchHelper?.setRawDrawingEnabled(false)
+                    touchHelper?.setRawDrawingEnabled(true)
+                    touchHelper?.setRawDrawingRenderEnabled(true)
+                    enableNativeEraser()
+                    Log.d("InkCanvasView", "Delayed overlay reset completed after GC")
+                } catch (e: Exception) {
+                    Log.e("InkCanvasView", "Failed delayed toggle: ${e.message}")
+                }
+            }, 600)
         }
 
         drawSurface(UpdateMode.GC)
@@ -410,5 +524,10 @@ class InkCanvasView @JvmOverloads constructor(
             builder.addStroke(sBuilder.build())
         }
         return builder.build()
+    }
+
+    fun refreshScreenGc() {
+        Log.d("InkCanvasView", "refreshScreenGc called")
+        drawSurface(UpdateMode.GC)
     }
 }

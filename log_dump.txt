@@ -1,0 +1,251 @@
+07-12 08:54:39.622 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:54:39.622 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:39.656 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:54:39.656 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:39.661 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:54:39.661 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:40.781 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:40.781 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:40.785 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:40.785 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:40.797 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:40.797 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.063 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.063 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.064 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.064 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.079 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.079 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.379 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.379 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.382 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.382 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.400 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.400 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.748 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.748 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.749 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.749 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:41.755 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:41.755 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:42.299 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:42.299 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:42.300 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:42.300 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:42.307 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:42.307 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:44.546 10389 10389 D InkDiaryDebug: setOnPauseListener: set isShowingAiContent=true
+07-12 08:54:46.238 10389 10389 D InkDiaryDebug: UI Error: set isShowingAiContent=true
+07-12 08:54:48.502 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=true, hasContent=false
+07-12 08:54:48.502 10389 10389 D InkDiaryDebug: Touch down detected while AI content is showing. Clearing AI response.
+07-12 08:54:48.506 10389 10389 D InkDiaryDebug: replyView cleared and set to GONE
+07-12 08:54:48.510 10389 10389 D InkDiaryDebug: debugText set to Ready (visible)
+07-12 08:54:48.511 10389 10389 D InkDiaryDebug: rootLayout invalidated in DU mode
+07-12 08:54:48.511 10389 10389 D InkDiaryDebug: inkCanvas is empty, skipping clearAll to avoid writing lag
+07-12 08:54:48.542 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:54:48.543 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:48.546 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:54:48.546 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:48.949 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:48.949 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:48.956 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:48.956 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:48.967 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:48.967 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:49.593 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:49.593 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:49.596 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:49.596 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:49.608 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:49.608 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:49.864 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:49.864 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:49.878 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:49.878 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:49.881 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:49.881 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:50.977 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:50.977 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:50.978 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:50.978 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:50.995 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:50.995 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:51.890 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:51.890 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:51.891 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:51.891 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:51.903 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:51.904 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:52.499 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:52.499 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:52.502 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:52.502 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:52.511 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:52.511 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:53.119 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:53.121 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:53.145 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:53.145 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:53.148 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:54:53.148 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:54:55.532 10389 10389 D InkDiaryDebug: setOnPauseListener: set isShowingAiContent=true
+07-12 08:54:56.672 10389 10389 D InkDiaryDebug: UI Error: set isShowingAiContent=true
+07-12 08:56:57.462 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=true, hasContent=false
+07-12 08:56:57.462 10389 10389 D InkDiaryDebug: Touch down detected while AI content is showing. Clearing AI response.
+07-12 08:56:57.468 10389 10389 D InkDiaryDebug: replyView cleared and set to GONE
+07-12 08:56:57.474 10389 10389 D InkDiaryDebug: debugText set to Ready (visible)
+07-12 08:56:57.474 10389 10389 D InkDiaryDebug: rootLayout invalidated in DU mode
+07-12 08:56:57.474 10389 10389 D InkDiaryDebug: inkCanvas is empty, skipping clearAll to avoid writing lag
+07-12 08:56:57.496 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:56:57.496 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:56:57.497 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:56:57.497 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:56:58.145 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:56:58.145 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:56:58.168 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:56:58.168 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:56:58.171 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:56:58.171 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:56:59.028 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:56:59.028 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:56:59.032 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:56:59.032 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:56:59.040 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:56:59.040 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:01.664 10389 10389 D InkDiaryDebug: setOnPauseListener: set isShowingAiContent=true
+07-12 08:57:03.047 10389 10389 D InkDiaryDebug: UI Error: set isShowingAiContent=true
+07-12 08:57:04.066 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=true, hasContent=false
+07-12 08:57:04.066 10389 10389 D InkDiaryDebug: Touch down detected while AI content is showing. Clearing AI response.
+07-12 08:57:04.070 10389 10389 D InkDiaryDebug: replyView cleared and set to GONE
+07-12 08:57:04.072 10389 10389 D InkDiaryDebug: debugText set to Ready (visible)
+07-12 08:57:04.073 10389 10389 D InkDiaryDebug: rootLayout invalidated in DU mode
+07-12 08:57:04.073 10389 10389 D InkDiaryDebug: inkCanvas is empty, skipping clearAll to avoid writing lag
+07-12 08:57:04.089 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:57:04.089 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:04.091 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=false
+07-12 08:57:04.091 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:05.511 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:05.511 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:05.531 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:05.531 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:05.535 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:05.536 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:06.775 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:06.775 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:06.783 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:06.783 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:06.785 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:06.785 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:08.151 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:08.152 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:08.156 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:08.156 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:08.168 10389 10389 D InkDiaryDebug: setOnTouchDownListener fired. isShowingAiContent=false, hasContent=true
+07-12 08:57:08.168 10389 10389 D InkDiaryDebug: Touch down detected but isShowingAiContent is false. Doing nothing.
+07-12 08:57:10.594 10389 10389 D InkDiaryDebug: setOnPauseListener: set isShowingAiContent=true
+07-12 08:57:11.440 10389 10389 D InkDiaryDebug: UI Error: set isShowingAiContent=true
+07-12 09:01:02.692 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=false
+07-12 09:01:02.692 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:02.694 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=false
+07-12 09:01:02.694 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:02.708 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=false
+07-12 09:01:02.708 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:03.765 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:03.765 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:03.768 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:03.768 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:03.779 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:03.779 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:04.143 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:04.143 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:04.145 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:04.145 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:04.156 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:04.156 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:04.659 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:04.659 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:04.661 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:04.661 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:04.671 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:04.671 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:05.263 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:05.263 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:05.264 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:05.264 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:05.274 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:05.274 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:07.818 10746 10746 D InkDiaryDebug: setOnPauseListener: set isShowingAiContent=true
+07-12 09:01:09.324 10746 10746 D InkDiaryDebug: UI Error: set isShowingAiContent=true
+07-12 09:01:11.934 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=true, isDebugShowingError=true, isShowingAiContent=true, hasContent=false
+07-12 09:01:11.934 10746 10746 D InkDiaryDebug: Touch down detected while AI content is showing. Clearing AI response.
+07-12 09:01:11.942 10746 10746 D InkDiaryDebug: inkCanvas is empty, skipping clearAll to avoid writing lag
+07-12 09:01:11.960 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=true, isDebugShowingError=false, isShowingAiContent=false, hasContent=false
+07-12 09:01:11.960 10746 10746 D InkDiaryDebug: Touch down detected while AI content is showing. Clearing AI response.
+07-12 09:01:11.962 10746 10746 D InkDiaryDebug: inkCanvas is empty, skipping clearAll to avoid writing lag
+07-12 09:01:11.988 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=true, isDebugShowingError=false, isShowingAiContent=false, hasContent=false
+07-12 09:01:11.988 10746 10746 D InkDiaryDebug: Touch down detected while AI content is showing. Clearing AI response.
+07-12 09:01:11.989 10746 10746 D InkDiaryDebug: inkCanvas is empty, skipping clearAll to avoid writing lag
+07-12 09:01:12.498 10746 10746 D InkDiaryDebug: debugText reset to Ready (visible) after delay
+07-12 09:01:12.498 10746 10746 D InkDiaryDebug: replyView set to GONE after delay
+07-12 09:01:13.086 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.086 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.111 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.111 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.118 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.118 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.369 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.369 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.374 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.375 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.386 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.386 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.863 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.863 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.864 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.864 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:13.877 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:13.877 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:14.180 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:14.180 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:14.181 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:14.181 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:14.194 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:14.194 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:14.573 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:14.573 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:14.575 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:14.575 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:14.597 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:14.597 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:16.017 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:16.017 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:16.020 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:16.020 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:16.030 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:16.030 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:16.447 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:16.447 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:16.448 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:16.448 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:16.461 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:16.461 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.119 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.119 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.120 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.120 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.126 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.126 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.753 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.753 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.766 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.766 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.768 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.768 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.972 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.972 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.976 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.976 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:17.987 10746 10746 D InkDiaryDebug: setOnTouchDownListener fired. isReplyVisible=false, isDebugShowingError=false, isShowingAiContent=false, hasContent=true
+07-12 09:01:17.987 10746 10746 D InkDiaryDebug: Touch down detected but no AI content is visible. Doing nothing.
+07-12 09:01:20.020 10746 10746 D InkDiaryDebug: setOnPauseListener: set isShowingAiContent=true
+07-12 09:01:20.883 10746 10746 D InkDiaryDebug: UI Error: set isShowingAiContent=true

@@ -31,9 +31,11 @@ import android.os.Handler
 import android.os.Looper
 import android.graphics.PixelFormat
 import android.graphics.Color
+import android.widget.FrameLayout
 
 class MainActivity : AppCompatActivity() {
 
+    private lateinit var rootLayout: FrameLayout
     private lateinit var inkCanvas: InkCanvasView
     private lateinit var replyView: HandwrittenReplyView
     private lateinit var debugText: TextView
@@ -50,6 +52,24 @@ class MainActivity : AppCompatActivity() {
             4 -> toggleDebugVisibility()
         }
         tapCount = 0
+    }
+
+    private val hideViewsRunnable = Runnable {
+        replyView.visibility = View.GONE
+        if (Config.isDebugEnabled(this@MainActivity)) {
+            debugText.visibility = View.VISIBLE
+            debugText.text = "Ready"
+            debugText.setBackgroundColor(Color.parseColor("#333333"))
+            try {
+                EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.DU)
+                debugText.invalidate()
+            } catch (e: Exception) {}
+            Log.d("InkDiaryDebug", "debugText reset to Ready (visible) after delay")
+        } else {
+            debugText.visibility = View.GONE
+            Log.d("InkDiaryDebug", "debugText set to GONE after delay")
+        }
+        Log.d("InkDiaryDebug", "replyView set to GONE after delay")
     }
 
     private var recognizerIsReady = false
@@ -75,7 +95,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupLLM() {
         llmService = LLMFactory.getService(this)
-        
+
         val preferred = Config.getPreferredLLM(this)
         val geminiKey = Config.getGeminiApiKey(this)
         val sambaKey = Config.getSambaNovaApiKey(this)
@@ -102,7 +122,7 @@ class MainActivity : AppCompatActivity() {
             hint = "Gemini API Key"
             setText(Config.getGeminiApiKey(context))
         }
-        
+
         val sambaInput = EditText(context).apply {
             hint = "SambaNova API Key"
             setText(Config.getSambaNovaApiKey(context))
@@ -127,7 +147,7 @@ class MainActivity : AppCompatActivity() {
         val options = arrayOf("Gemini", "SambaNova")
         val spinner = Spinner(context).apply {
             adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, options)
-            
+
             onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
                     geminiLayout.visibility = if (position == 0) View.VISIBLE else View.GONE
@@ -135,7 +155,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
             }
-            
+
             setSelection(if (currentLLM == Config.LLM_GEMINI) 0 else 1)
         }
 
@@ -153,10 +173,10 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Save") { _, _ ->
                 Config.saveGeminiApiKey(context, geminiInput.text.toString())
                 Config.saveSambaNovaApiKey(context, sambaInput.text.toString())
-                
+
                 val preferred = if (spinner.selectedItemPosition == 0) Config.LLM_GEMINI else Config.LLM_SAMBANOVA
                 Config.setPreferredLLM(context, preferred)
-                
+
                 setupLLM()
                 Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
             }
@@ -186,12 +206,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         // Match the background for ZOrderOnTop transparency
         window.setBackgroundDrawableResource(android.R.color.white)
-        
+
         setContentView(R.layout.activity_main)
 
+        rootLayout = findViewById(R.id.rootLayout)
         inkCanvas = findViewById(R.id.inkCanvas)
         replyView = findViewById(R.id.replyView)
         debugText = findViewById(R.id.debugRecognizedText)
@@ -201,6 +222,9 @@ class MainActivity : AppCompatActivity() {
         debugText.setTextColor(Color.WHITE)
         debugText.text = "Initializing..."
         
+        Log.d("InkDiaryDebug", "BuildConfig Gemini: ${BuildConfig.GEMINI_API_KEY}")
+        Log.d("InkDiaryDebug", "BuildConfig Samba: ${BuildConfig.SAMBANOVA_API_KEY}")
+
         try {
             EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC)
         } catch (e: Exception) {}
@@ -222,27 +246,47 @@ class MainActivity : AppCompatActivity() {
         // touchHelper.setRawDrawingEnabled(false/true) which resets the Onyx raw drawing
         // overlay — essential for clearing ghost pixels from the e-ink screen.
         inkCanvas.setOnTouchDownListener {
-            if (isShowingAiContent) {
-                Log.d("MainActivity", "Stylus nib down — clearing AI response for new input")
+            val hasActiveContent = isShowingAiContent
+
+            Log.d("InkDiaryDebug", "setOnTouchDownListener: hasActiveContent=$hasActiveContent")
+
+            if (hasActiveContent) {
+                Log.d("InkDiaryDebug", "Clearing AI response and status.")
                 isShowingAiContent = false
                 currentSessionId++
+                
+                // Cancel any pending visibility hide animations
+                handler.removeCallbacks(hideViewsRunnable)
 
-                // 1. Hide the AI response layers IMMEDIATELY in the software UI
+                // 1. Keep views VISIBLE so Android actually calls onDraw().
+                // If set to INVISIBLE or GONE immediately, Android skips drawing,
+                // and the Onyx E-ink controller NEVER physically clears the screen!
+                
+                // Clear replyView content (blanks text, sets GC mode internally, invalidates)
+                // This triggers a GC refresh on the HandwrittenReplyView.
                 replyView.clear()
-                replyView.visibility = View.GONE
+                
+                // Clear data content
+                debugText.text = ""
+                debugText.setBackgroundColor(Color.TRANSPARENT)
+                try {
+                    EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC)
+                    debugText.invalidate()
+                } catch (e: Exception) {}
+                
+                // 2. Re-enable interaction
+                inkCanvas.setInteractionEnabled(true)
 
-                // 2. Clear status bar
-                if (Config.isDebugEnabled(this@MainActivity)) {
-                    debugText.text = "Ready"
-                    debugText.setBackgroundColor(Color.parseColor("#333333"))
-                } else {
-                    debugText.text = ""
-                    debugText.visibility = View.GONE
-                }
+                // 3. Clear the ink overlay AFTER a short delay (50ms) to avoid
+                // conflicting GC refreshes on the e-ink controller. The replyView.clear()
+                // above triggers its own GC; if clearAll() fires simultaneously, one GC
+                // can cancel the other, leaving ghost text on the e-ink screen.
+                handler.postDelayed({
+                    inkCanvas.clearAll(suppressAnimationForGc = true)
+                }, 50)
 
-                // 3. Perform the hardware clear and refresh
-                // We use a single call that handles both the buffer clearing and the E-ink flash
-                inkCanvas.clearAll()
+                // 4. Final hide (GONE) after 700ms (50ms delay + 650ms for GC refresh)
+                handler.postDelayed(hideViewsRunnable, 700)
             }
         }
 
@@ -270,11 +314,12 @@ class MainActivity : AppCompatActivity() {
                 Log.d("MainActivity", "No content to recognize")
                 return@setOnPauseListener
             }
-            
+
             runOnUiThread {
                 debugText.visibility = View.VISIBLE
                 debugText.text = "Recognizing..."
                 isShowingAiContent = true
+                Log.d("InkDiaryDebug", "setOnPauseListener: set isShowingAiContent=true")
             }
             val sessionId = ++currentSessionId
             val ink = inkCanvas.exportInk()
@@ -288,7 +333,7 @@ class MainActivity : AppCompatActivity() {
                         return@recognize
                     }
                     Log.d("MainActivity", "ML Kit result: '$text'")
-                    
+
                     // 1. Immediately update UI before ANY network/processing happens
                     runOnUiThread {
                         if (text.isBlank()) {
@@ -297,10 +342,10 @@ class MainActivity : AppCompatActivity() {
                             debugText.text = "Recognized: \"$text\""
                         }
                         debugText.setBackgroundColor(Color.parseColor("#333333"))
-                        
+
                         // 2. Clear the ink immediately so the user knows it's accepted
                         inkCanvas.clearAll()
-                        
+
                         try {
                             EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.DU)
                             debugText.invalidate()
@@ -309,8 +354,13 @@ class MainActivity : AppCompatActivity() {
 
                     if (text.isBlank()) {
                         runOnUiThread {
+                            if (sessionId != currentSessionId) return@runOnUiThread
                             replyView.visibility = View.VISIBLE
-                            replyView.setTextAndAnimate("(Could not recognize handwriting)")
+                            handler.postDelayed({
+                                if (sessionId == currentSessionId) {
+                                    replyView.setTextAndAnimate("(Could not recognize handwriting)")
+                                }
+                            }, 300)
                             isShowingAiContent = true
                         }
                         return@recognize
@@ -322,10 +372,15 @@ class MainActivity : AppCompatActivity() {
                     lifecycleScope.launch {
                         // Show status that we are now calling the API
                         runOnUiThread {
+                            if (sessionId != currentSessionId) return@runOnUiThread
                             debugText.text = "Recognized: \"$text\"\n(Thinking...)"
                             // Show thinking message in the main area
                             replyView.visibility = View.VISIBLE
-                            replyView.setTextAndAnimate("Thinking...")
+                            handler.postDelayed({
+                                if (sessionId == currentSessionId) {
+                                    replyView.setTextAndAnimate("Thinking...")
+                                }
+                            }, 300)
                             isShowingAiContent = true
                         }
 
@@ -334,7 +389,11 @@ class MainActivity : AppCompatActivity() {
                                 if (sessionId != currentSessionId) return@runOnUiThread
                                 debugText.text = "Recognized: \"$text\"\n(Offline)"
                                 replyView.visibility = View.VISIBLE
-                                replyView.setTextAndAnimate("I'm offline. Please check your WiFi connection.")
+                                handler.postDelayed({
+                                    if (sessionId == currentSessionId) {
+                                        replyView.setTextAndAnimate("I'm offline. Please check your WiFi connection.")
+                                    }
+                                }, 300)
                                 isShowingAiContent = true
                             }
                             return@launch
@@ -345,7 +404,7 @@ class MainActivity : AppCompatActivity() {
                         val historyEntries = withContext(Dispatchers.IO) {
                             conversationDao.getConversationsByDate(today)
                         }
-                        
+
                         val history = historyEntries.map { entry -> ChatMessage(entry.role, entry.content) }
 
                         val response = llmService.generateResponse(text, history) ?: "API_ERROR: No response"
@@ -362,11 +421,30 @@ class MainActivity : AppCompatActivity() {
                                 conversationDao.insert(ConversationEntry(date = today, role = "model", content = response))
                             }
                             runOnUiThread {
+                                // Guard: user may have started new writing while AI was thinking
+                                if (sessionId != currentSessionId) {
+                                    Log.d("MainActivity", "Discarding stale AI response (user already started new session)")
+                                    return@runOnUiThread
+                                }
                                 Log.d("MainActivity", "Updating UI with AI response")
+
+                                // Bounce the Onyx touch layer to prevent stylus input from freezing
+                                inkCanvas.bounceTouchHelper()
+
                                 debugText.text = "Recognized: \"$text\"" // Keep the recognized text clean
                                 replyView.visibility = View.VISIBLE
-                                replyView.setTextAndAnimate(response)
+                                
+                                // Delay starting the animation slightly (300ms) to ensure the 
+                                // inkCanvas.clearAll() GC refresh has physically completed 
+                                // on the screen before the typewriter DU mode starts.
+                                handler.postDelayed({
+                                    if (sessionId == currentSessionId) {
+                                        replyView.setTextAndAnimate(response)
+                                    }
+                                }, 300)
+
                                 isShowingAiContent = true
+                                Log.d("InkDiaryDebug", "UI Success: set isShowingAiContent=true")
                                 try { EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC); debugText.invalidate() } catch(e:Exception){}
                             }
                         } else {
@@ -374,16 +452,30 @@ class MainActivity : AppCompatActivity() {
                             val userFriendlyError = response.removePrefix("API_ERROR: ")
                             Log.e("MainActivity", "AI Error: $userFriendlyError")
                             runOnUiThread {
+                                // Guard: user may have started new writing while AI was thinking
+                                if (sessionId != currentSessionId) {
+                                    Log.d("MainActivity", "Discarding stale AI error (user already started new session)")
+                                    return@runOnUiThread
+                                }
+
+                                // Bounce the Onyx touch layer to prevent stylus input from freezing
+                                inkCanvas.bounceTouchHelper()
+
                                 debugText.setBackgroundColor(Color.RED)
                                 debugText.text = "Recognized: \"$text\"\nERROR: $userFriendlyError"
                                 replyView.visibility = View.VISIBLE
-                                replyView.setTextAndAnimate("I encountered an error: $userFriendlyError")
-                                isShowingAiContent = true
-                                
                                 handler.postDelayed({
-                                    try { 
+                                    if (sessionId == currentSessionId) {
+                                        replyView.setTextAndAnimate("I encountered an error: $userFriendlyError")
+                                    }
+                                }, 300)
+                                isShowingAiContent = true
+                                Log.d("InkDiaryDebug", "UI Error: set isShowingAiContent=true")
+
+                                handler.postDelayed({
+                                    try {
                                         EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC)
-                                        debugText.invalidate() 
+                                        debugText.invalidate()
                                     } catch(e:Exception){}
                                 }, 500)
                             }
@@ -391,9 +483,9 @@ class MainActivity : AppCompatActivity() {
                     }
                 },
                 onError = { e ->
-                    runOnUiThread { 
+                    runOnUiThread {
                         if (sessionId != currentSessionId) return@runOnUiThread
-                        debugText.text = "Recognition error: ${e.message}" 
+                        debugText.text = "Recognition error: ${e.message}"
                     }
                 }
             )

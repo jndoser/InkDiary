@@ -12,7 +12,7 @@ private const val TAG = "GeminiService"
 class GeminiService(apiKey: String) : LLMService {
     private val cleanedKey = apiKey.trim()
     private val generativeModel = GenerativeModel(
-        modelName = "gemini-1.5-pro",
+        modelName = "gemini-2.5-pro",
         apiKey = cleanedKey,
         systemInstruction = content { text("You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. Respond in the language the user uses, but if you're unsure, use English. You have memory of what the user wrote earlier today.") }
     )

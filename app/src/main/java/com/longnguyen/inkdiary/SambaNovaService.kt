@@ -44,7 +44,7 @@ class SambaNovaService(private val apiKey: String) : LLMService {
             messages.add(SambaMessage("user", prompt))
 
             val chatRequest = ChatRequest(
-                model = "gpt-oss-120b",
+                model = "DeepSeek-V3.1",
                 messages = messages,
                 stream = false
             )

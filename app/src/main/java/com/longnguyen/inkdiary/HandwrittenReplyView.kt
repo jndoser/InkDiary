@@ -8,6 +8,7 @@ import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
 import android.util.AttributeSet
+import android.util.Log
 import android.view.View
 import com.onyx.android.sdk.api.device.epd.EpdController
 import com.onyx.android.sdk.api.device.epd.UpdateMode
@@ -57,16 +58,39 @@ class HandwrittenReplyView @JvmOverloads constructor(
             } else {
                 // Animation completed! Clear artifacts with a clean high-quality flash
                 try {
+                    // Set this view to GC and invalidate
                     EpdController.setViewDefaultUpdateMode(this@HandwrittenReplyView, UpdateMode.GC)
                     invalidate()
-                } catch (e: Exception) {}
+                    
+                    // Also try to find the root view and force a global refresh to wipe any ink ghosts
+                    var root: View = this@HandwrittenReplyView
+                    while (root.parent is View) {
+                        root = root.parent as View
+                    }
+                    EpdController.setViewDefaultUpdateMode(root, UpdateMode.GC)
+                    root.invalidate()
+                    
+                    Log.d("HandwrittenReplyView", "Animation complete: Multi-layer GC refresh triggered")
+                } catch (e: Exception) {
+                    Log.e("HandwrittenReplyView", "GC refresh failed: ${e.message}")
+                }
             }
         }
+    }
+
+    init {
+        try {
+            // Enable high-performance updates for this view
+            EpdController.enablePost(this, 1)
+        } catch (e: Exception) {}
     }
 
     fun setTextAndAnimate(text: String) {
         // Stop any running animations safely
         animationHandler.removeCallbacks(typewriterRunnable)
+
+        // Ensure background is transparent so the drawing canvas shows through behind the text
+        setBackgroundColor(Color.TRANSPARENT)
 
         this.fullText = text
         this.displayedText = ""
@@ -137,10 +161,28 @@ class HandwrittenReplyView @JvmOverloads constructor(
     }
 
     fun clear() {
-        animationHandler.removeCallbacks(typewriterRunnable)
+        // Remove all pending animation callbacks (including the end-of-animation GC callback)
+        animationHandler.removeCallbacksAndMessages(null)
         fullText = ""
         displayedText = ""
+        wordsList = emptyList()
+        currentWordIndex = 0
         lines.clear()
+
+        // Set GC mode to physically wipe the e-ink screen of any ghosting
+        try {
+            EpdController.setViewDefaultUpdateMode(this, UpdateMode.GC)
+            
+            // Also try to find the root view and force a global refresh to wipe any ink ghosts
+            var root: View = this
+            while (root.parent is View) {
+                root = root.parent as View
+            }
+            EpdController.setViewDefaultUpdateMode(root, UpdateMode.GC)
+            root.invalidate()
+        } catch (e: Exception) {}
         invalidate()
     }
+
+    fun hasContent(): Boolean = fullText.isNotEmpty() || displayedText.isNotEmpty()
 }
