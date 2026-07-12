@@ -10,6 +10,8 @@
     <application
         android:name=".DiaryApplication"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="Ink Diary"
         android:theme="@style/Theme.InkDiary"
         android:supportsRtl="true"
