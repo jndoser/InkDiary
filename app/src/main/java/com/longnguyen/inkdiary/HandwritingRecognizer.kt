@@ -13,35 +13,87 @@ import com.google.mlkit.vision.digitalink.Ink
 private const val TAG = "HandwritingRecognizer"
 
 /**
- * Step 2: raw strokes -> English text, fully offline after the first
- * model download. No network call happens per-recognition — only once,
- * up front, to fetch the "en" model (a few MB).
+ * Step 2: raw strokes -> text, fully offline after the first
+ * model download. Supports both English ("en") and Vietnamese ("vi").
+ * No network call happens per-recognition — only once,
+ * up front, to fetch each model (a few MB each).
  */
 class HandwritingRecognizer {
 
-    private var recognizer: DigitalInkRecognizer? = null
     private val modelManager = RemoteModelManager.getInstance()
-    private var model: DigitalInkRecognitionModel? = null
+
+    // One recognizer per language
+    private var enRecognizer: DigitalInkRecognizer? = null
+    private var viRecognizer: DigitalInkRecognizer? = null
+
+    /** The currently active language tag ("en" or "vi"). */
+    var currentLanguage: String = "en"
+        private set
 
     /**
-     * Downloads the English recognition model if not already present.
+     * Downloads both the English and Vietnamese recognition models.
      * Call this once, e.g. in onCreate. Requires WiFi the first time;
-     * after that the model is cached on-device and works fully offline.
+     * after that the models are cached on-device and work fully offline.
      */
     fun setup(onReady: () -> Unit, onError: (Exception) -> Unit) {
+        var enReady = false
+        var viReady = false
+
+        fun checkBothReady() {
+            if (enReady && viReady) {
+                Log.d(TAG, "Both EN and VI models ready")
+                onReady()
+            }
+        }
+
+        // --- Download English model ---
+        downloadModel("en",
+            onSuccess = { recognizer ->
+                enRecognizer = recognizer
+                enReady = true
+                Log.d(TAG, "English model ready (offline from now on)")
+                checkBothReady()
+            },
+            onFailure = { e ->
+                Log.e(TAG, "English model download failed", e)
+                onError(e)
+            }
+        )
+
+        // --- Download Vietnamese model ---
+        downloadModel("vi",
+            onSuccess = { recognizer ->
+                viRecognizer = recognizer
+                viReady = true
+                Log.d(TAG, "Vietnamese model ready (offline from now on)")
+                checkBothReady()
+            },
+            onFailure = { e ->
+                // Vietnamese model failure is non-fatal; we still have English
+                Log.w(TAG, "Vietnamese model download failed — VI recognition unavailable", e)
+                viReady = true // Mark as "done" so we don't block forever
+                checkBothReady()
+            }
+        )
+    }
+
+    private fun downloadModel(
+        languageTag: String,
+        onSuccess: (DigitalInkRecognizer) -> Unit,
+        onFailure: (Exception) -> Unit
+    ) {
         val modelIdentifier = try {
-            DigitalInkRecognitionModelIdentifier.fromLanguageTag("en")
+            DigitalInkRecognitionModelIdentifier.fromLanguageTag(languageTag)
         } catch (e: Exception) {
-            onError(IllegalStateException("Could not find ML Kit model for language tag 'en'", e))
+            onFailure(IllegalStateException("Could not find ML Kit model for language tag '$languageTag'", e))
             return
         }
         if (modelIdentifier == null) {
-            onError(IllegalStateException("ML Kit does not have a Digital Ink model for English on this device"))
+            onFailure(IllegalStateException("ML Kit does not have a Digital Ink model for '$languageTag'"))
             return
         }
 
         val builtModel = DigitalInkRecognitionModel.builder(modelIdentifier).build()
-        model = builtModel
 
         val downloadConditions = DownloadConditions.Builder()
             .requireWifi()
@@ -49,21 +101,42 @@ class HandwritingRecognizer {
 
         modelManager.download(builtModel, downloadConditions)
             .addOnSuccessListener {
-                recognizer = DigitalInkRecognition.getClient(
+                val recognizer = DigitalInkRecognition.getClient(
                     DigitalInkRecognizerOptions.builder(builtModel).build()
                 )
-                Log.d(TAG, "English model ready (offline from now on)")
-                onReady()
+                onSuccess(recognizer)
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "Model download failed — WiFi required for first time", e)
-                onError(e)
+                onFailure(e)
             }
     }
 
-    /** Runs recognition on the ink captured so far. Fully offline. */
+    /**
+     * Switches the active recognition language.
+     * Returns true if the requested language is available.
+     */
+    fun setLanguage(languageTag: String): Boolean {
+        val recognizer = when (languageTag) {
+            "en" -> enRecognizer
+            "vi" -> viRecognizer
+            else -> null
+        }
+        return if (recognizer != null) {
+            currentLanguage = languageTag
+            Log.d(TAG, "Switched recognition language to: $languageTag")
+            true
+        } else {
+            Log.w(TAG, "Cannot switch to '$languageTag' — model not available")
+            false
+        }
+    }
+
+    /** Runs recognition on the ink captured so far, using the currently active language. Fully offline. */
     fun recognize(ink: Ink, onResult: (String) -> Unit, onError: (Exception) -> Unit) {
-        val r = recognizer
+        val r = when (currentLanguage) {
+            "vi" -> viRecognizer ?: enRecognizer
+            else -> enRecognizer
+        }
         if (r == null) {
             onError(IllegalStateException("Recognizer not ready — call setup() first and wait for onReady"))
             return
@@ -72,17 +145,19 @@ class HandwritingRecognizer {
             .addOnSuccessListener { result ->
                 // candidates are ranked by confidence; take the top guess for now.
                 val text = result.candidates.firstOrNull()?.text.orEmpty()
-                Log.d(TAG, "Recognized: \"$text\" (${result.candidates.size} candidates)")
+                Log.d(TAG, "Recognized ($currentLanguage): \"$text\" (${result.candidates.size} candidates)")
                 onResult(text)
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "Recognition failed", e)
+                Log.e(TAG, "Recognition failed ($currentLanguage)", e)
                 onError(e)
             }
     }
 
     fun close() {
-        recognizer?.close()
-        recognizer = null
+        enRecognizer?.close()
+        enRecognizer = null
+        viRecognizer?.close()
+        viRecognizer = null
     }
 }

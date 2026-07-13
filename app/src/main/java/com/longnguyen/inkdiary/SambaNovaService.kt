@@ -34,7 +34,7 @@ class SambaNovaService(private val apiKey: String) : LLMService {
 
         try {
             val messages = mutableListOf<SambaMessage>()
-            messages.add(SambaMessage("system", "You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. Respond in the language the user uses, but if you're unsure, use English. You have memory of what the user wrote earlier today."))
+            messages.add(SambaMessage("system", "You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. You are fluent in both English and Vietnamese. Always respond in the same language the user writes in. If the user writes in Vietnamese, respond in Vietnamese. If unsure, use English. You have memory of what the user wrote earlier today."))
             
             history.forEach { 
                 val role = if (it.role == "user") "user" else "assistant"

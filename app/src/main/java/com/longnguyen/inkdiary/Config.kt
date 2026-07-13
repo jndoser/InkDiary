@@ -12,6 +12,10 @@ object Config {
     const val LLM_GEMINI = "gemini"
     const val LLM_SAMBANOVA = "sambanova"
     private const val KEY_DEBUG_MODE = "debug_mode"
+    private const val KEY_RECOGNITION_LANGUAGE = "recognition_language"
+
+    const val LANG_ENGLISH = "en"
+    const val LANG_VIETNAMESE = "vi"
 
     fun getGeminiApiKey(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -80,5 +84,15 @@ object Config {
     fun setDebugEnabled(context: Context, enabled: Boolean) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_DEBUG_MODE, enabled).apply()
+    }
+
+    fun getRecognitionLanguage(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_RECOGNITION_LANGUAGE, LANG_ENGLISH) ?: LANG_ENGLISH
+    }
+
+    fun setRecognitionLanguage(context: Context, lang: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_RECOGNITION_LANGUAGE, lang).apply()
     }
 }

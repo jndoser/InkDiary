@@ -86,6 +86,10 @@ class MainActivity : AppCompatActivity() {
         return if (Config.getPreferredLLM(this) == Config.LLM_GEMINI) "Gemini" else "SambaNova"
     }
 
+    private fun getActiveLanguageLabel(): String {
+        return if (Config.getRecognitionLanguage(this) == Config.LANG_VIETNAMESE) "VI" else "EN"
+    }
+
     private fun isOnline(): Boolean {
         val connectivityManager = getSystemService(ConnectivityManager::class.java)
         val currentNetwork = connectivityManager.activeNetwork ?: return false
@@ -96,6 +100,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupLLM() {
         llmService = LLMFactory.getService(this)
 
+        // Apply saved language preference to the recognizer
+        val savedLang = Config.getRecognitionLanguage(this)
+        recognizer.setLanguage(savedLang)
+
         val preferred = Config.getPreferredLLM(this)
         val geminiKey = Config.getGeminiApiKey(this)
         val sambaKey = Config.getSambaNovaApiKey(this)
@@ -104,8 +112,9 @@ class MainActivity : AppCompatActivity() {
             debugText.text = "GUIDE: API Key is missing. Tap 3 times (finger) to enter API Keys."
         } else {
             val active = if (preferred == Config.LLM_GEMINI) "Gemini" else "SambaNova"
+            val lang = getActiveLanguageLabel()
             if (recognizerIsReady) {
-                debugText.text = "Ready (Using $active). Write something."
+                debugText.text = "Ready ($active, $lang). Write something."
             }
         }
     }
@@ -159,11 +168,22 @@ class MainActivity : AppCompatActivity() {
             setSelection(if (currentLLM == Config.LLM_GEMINI) 0 else 1)
         }
 
+        // Language selector
+        val currentLang = Config.getRecognitionLanguage(context)
+        val langOptions = arrayOf("English", "Tiếng Việt")
+        val langSpinner = Spinner(context).apply {
+            adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, langOptions)
+            setSelection(if (currentLang == Config.LANG_VIETNAMESE) 1 else 0)
+        }
+
         layout.addView(TextView(context).apply { text = "Preferred LLM:" })
         layout.addView(spinner)
         layout.addView(View(context).apply { layoutParams = LinearLayout.LayoutParams(1, 20) })
         layout.addView(geminiLayout)
         layout.addView(sambaLayout)
+        layout.addView(View(context).apply { layoutParams = LinearLayout.LayoutParams(1, 20) })
+        layout.addView(TextView(context).apply { text = "Handwriting Language:" })
+        layout.addView(langSpinner)
 
         val scrollView = ScrollView(context).apply { addView(layout) }
 
@@ -176,6 +196,9 @@ class MainActivity : AppCompatActivity() {
 
                 val preferred = if (spinner.selectedItemPosition == 0) Config.LLM_GEMINI else Config.LLM_SAMBANOVA
                 Config.setPreferredLLM(context, preferred)
+
+                val selectedLang = if (langSpinner.selectedItemPosition == 1) Config.LANG_VIETNAMESE else Config.LANG_ENGLISH
+                Config.setRecognitionLanguage(context, selectedLang)
 
                 setupLLM()
                 Toast.makeText(context, "Settings saved", Toast.LENGTH_SHORT).show()
@@ -291,7 +314,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // One-time model download
-        debugText.text = "Downloading English model..."
+        debugText.text = "Downloading language models..."
         recognizer.setup(
             onReady = {
                 runOnUiThread {

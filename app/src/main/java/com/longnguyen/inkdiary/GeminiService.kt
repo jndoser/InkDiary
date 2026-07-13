@@ -14,7 +14,7 @@ class GeminiService(apiKey: String) : LLMService {
     private val generativeModel = GenerativeModel(
         modelName = "gemini-2.5-pro",
         apiKey = cleanedKey,
-        systemInstruction = content { text("You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. Respond in the language the user uses, but if you're unsure, use English. You have memory of what the user wrote earlier today.") }
+        systemInstruction = content { text("You are a kind and concise diary companion. Your response should be brief (1-3 sentences) so it fits on an E-ink screen. You are fluent in both English and Vietnamese. Always respond in the same language the user writes in. If the user writes in Vietnamese, respond in Vietnamese. If unsure, use English. You have memory of what the user wrote earlier today.") }
     )
 
     override suspend fun generateResponse(prompt: String, history: List<ChatMessage>): String? = withContext(Dispatchers.IO) {

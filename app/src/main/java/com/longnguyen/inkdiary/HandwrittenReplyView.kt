@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.util.Log
 import android.view.View
+import androidx.core.content.res.ResourcesCompat
 import com.onyx.android.sdk.api.device.epd.EpdController
 import com.onyx.android.sdk.api.device.epd.UpdateMode
 
@@ -24,7 +25,7 @@ class HandwrittenReplyView @JvmOverloads constructor(
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.BLACK
         textSize = 42f
-        typeface = Typeface.create("cursive", Typeface.NORMAL)
+        typeface = ResourcesCompat.getFont(context, R.font.kalam_regular) ?: Typeface.create("cursive", Typeface.NORMAL)
         strokeWidth = 1.1f
         style = Paint.Style.FILL_AND_STROKE
     }
