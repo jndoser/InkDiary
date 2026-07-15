@@ -3,7 +3,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("kotlin-kapt")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -17,6 +17,10 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1-step1"
+
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
 
         val properties = Properties()
         val localPropertiesFile = project.rootProject.file("local.properties")
@@ -46,6 +50,7 @@ android {
 
     kotlinOptions {
         jvmTarget = "1.8"
+        freeCompilerArgs += listOf("-Xskip-metadata-version-check")
     }
 
     packaging {
@@ -53,24 +58,34 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
+            pickFirsts += "**/librnllama_v8_2.so"
+            pickFirsts += "**/librnllama_v8_2_dotprod.so"
+            pickFirsts += "**/librnllama_v8_2_i8mm.so"
+            pickFirsts += "**/librnllama_v8_2_dotprod_i8mm.so"
             pickFirsts += "lib/**/libc++_shared.so"
         }
     }
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.core:core-ktx:1.13.1") {
+        version { strictly("1.13.1") }
+    }
+    implementation("androidx.core:core:1.13.1") {
+        version { strictly("1.13.1") }
+    }
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+    implementation("io.github.ljcamargo:llamacpp-kotlin:0.4.0")
     
     // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-    kapt("androidx.room:room-compiler:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
     
     // Onyx Boox SDK with exclusions to fix broken transitive dependencies
     implementation("com.onyx.android.sdk:onyxsdk-device:1.3.5") {

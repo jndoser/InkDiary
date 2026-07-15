@@ -15,8 +15,9 @@ import com.longnguyen.inkdiary.data.AppDatabase
 import com.longnguyen.inkdiary.data.ConversationEntry
 import com.onyx.android.sdk.api.device.epd.EpdController
 import com.onyx.android.sdk.api.device.epd.UpdateMode
-import kotlinx.coroutines.Dispatchers
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -83,7 +84,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getActiveLLMName(): String {
-        return if (Config.getPreferredLLM(this) == Config.LLM_GEMINI) "Gemini" else "SambaNova"
+        return when (Config.getPreferredLLM(this)) {
+            Config.LLM_GEMINI -> "Gemini"
+            Config.LLM_SAMBANOVA -> "SambaNova"
+            Config.LLM_ON_DEVICE -> "On-Device"
+            else -> "Unknown"
+        }
+    }
+
+    private fun isOnDeviceLLM(): Boolean {
+        return Config.getPreferredLLM(this) == Config.LLM_ON_DEVICE
     }
 
     private fun getActiveLanguageLabel(): String {
@@ -108,7 +118,47 @@ class MainActivity : AppCompatActivity() {
         val geminiKey = Config.getGeminiApiKey(this)
         val sambaKey = Config.getSambaNovaApiKey(this)
 
-        if (geminiKey.isBlank() && sambaKey.isBlank()) {
+        if (preferred == Config.LLM_ON_DEVICE) {
+            val lang = getActiveLanguageLabel()
+            if (!ModelDownloadManager.isModelDownloaded(this)) {
+                debugText.text = "Downloading offline AI model (0%). Please wait..."
+                lifecycleScope.launch {
+                    val result = ModelDownloadManager.downloadModel(this@MainActivity) { downloaded, total ->
+                        val percent = if (total > 0) (downloaded * 100 / total).toInt() else 0
+                        runOnUiThread {
+                            debugText.text = "Downloading offline AI model ($percent%). Please wait..."
+                        }
+                    }
+                    if (result.isSuccess) {
+                        runOnUiThread { debugText.text = "Loading on-device model..." }
+                        (llmService as? OnDeviceLLMService)?.loadModel(
+                            onLoaded = {
+                                runOnUiThread {
+                                    if (recognizerIsReady) debugText.text = "Ready (On-Device, $lang). Write something."
+                                }
+                            },
+                            onError = { e ->
+                                runOnUiThread { debugText.text = "Error loading model: ${e.message}" }
+                            }
+                        )
+                    } else {
+                        runOnUiThread { debugText.text = "Download failed: ${result.exceptionOrNull()?.message}" }
+                    }
+                }
+            } else {
+                debugText.text = "Loading on-device model..."
+                (llmService as? OnDeviceLLMService)?.loadModel(
+                    onLoaded = {
+                        runOnUiThread {
+                            if (recognizerIsReady) debugText.text = "Ready (On-Device, $lang). Write something."
+                        }
+                    },
+                    onError = { e ->
+                        runOnUiThread { debugText.text = "Error loading model: ${e.message}" }
+                    }
+                )
+            }
+        } else if (geminiKey.isBlank() && sambaKey.isBlank()) {
             debugText.text = "GUIDE: API Key is missing. Tap 3 times (finger) to enter API Keys."
         } else {
             val active = if (preferred == Config.LLM_GEMINI) "Gemini" else "SambaNova"
@@ -153,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             visibility = if (currentLLM == Config.LLM_SAMBANOVA) View.VISIBLE else View.GONE
         }
 
-        val options = arrayOf("Gemini", "SambaNova")
+        val options = arrayOf("Gemini", "SambaNova", "On-Device (Offline)")
         val spinner = Spinner(context).apply {
             adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, options)
 
@@ -165,7 +215,11 @@ class MainActivity : AppCompatActivity() {
                 override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
             }
 
-            setSelection(if (currentLLM == Config.LLM_GEMINI) 0 else 1)
+            setSelection(when (currentLLM) {
+                Config.LLM_GEMINI -> 0
+                Config.LLM_SAMBANOVA -> 1
+                else -> 2
+            })
         }
 
         // Language selector
@@ -194,7 +248,11 @@ class MainActivity : AppCompatActivity() {
                 Config.saveGeminiApiKey(context, geminiInput.text.toString())
                 Config.saveSambaNovaApiKey(context, sambaInput.text.toString())
 
-                val preferred = if (spinner.selectedItemPosition == 0) Config.LLM_GEMINI else Config.LLM_SAMBANOVA
+                val preferred = when (spinner.selectedItemPosition) {
+                    0 -> Config.LLM_GEMINI
+                    1 -> Config.LLM_SAMBANOVA
+                    else -> Config.LLM_ON_DEVICE
+                }
                 Config.setPreferredLLM(context, preferred)
 
                 val selectedLang = if (langSpinner.selectedItemPosition == 1) Config.LANG_VIETNAMESE else Config.LANG_ENGLISH
@@ -345,11 +403,19 @@ class MainActivity : AppCompatActivity() {
                 Log.d("InkDiaryDebug", "setOnPauseListener: set isShowingAiContent=true")
             }
             val sessionId = ++currentSessionId
-            val ink = inkCanvas.exportInk()
+            val strokePoints = inkCanvas.exportStrokePoints()
+            val canvasW = inkCanvas.width.toFloat().coerceAtLeast(1f)
+            val canvasH = inkCanvas.height.toFloat().coerceAtLeast(1f)
 
-            Log.d("MainActivity", "Calling ML Kit recognizer...")
+            Log.d(
+                "MainActivity",
+                "Calling ML Kit recognizer... strokes=${strokePoints.size}, " +
+                    "canvas=${canvasW.toInt()}x${canvasH.toInt()}, lang=${recognizer.currentLanguage}"
+            )
             recognizer.recognize(
-                ink,
+                strokes = strokePoints,
+                canvasWidth = canvasW,
+                canvasHeight = canvasH,
                 onResult = { text ->
                     if (sessionId != currentSessionId) {
                         Log.d("MainActivity", "Ignoring stale recognition result")
@@ -407,14 +473,15 @@ class MainActivity : AppCompatActivity() {
                             isShowingAiContent = true
                         }
 
-                        if (!withContext(Dispatchers.IO) { isOnline() }) {
+                        // Cloud APIs need internet; on-device LLM works fully offline.
+                        if (!isOnDeviceLLM() && !withContext(Dispatchers.IO) { isOnline() }) {
                             runOnUiThread {
                                 if (sessionId != currentSessionId) return@runOnUiThread
                                 debugText.text = "Recognized: \"$text\"\n(Offline)"
                                 replyView.visibility = View.VISIBLE
                                 handler.postDelayed({
                                     if (sessionId == currentSessionId) {
-                                        replyView.setTextAndAnimate("I'm offline. Please check your WiFi connection.")
+                                        replyView.setTextAndAnimate("I'm offline. Please check your WiFi connection, or switch to On-Device (Offline) AI.")
                                     }
                                 }, 300)
                                 isShowingAiContent = true

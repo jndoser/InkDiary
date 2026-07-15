@@ -11,6 +11,7 @@ object Config {
 
     const val LLM_GEMINI = "gemini"
     const val LLM_SAMBANOVA = "sambanova"
+    const val LLM_ON_DEVICE = "on_device"
     private const val KEY_DEBUG_MODE = "debug_mode"
     private const val KEY_RECOGNITION_LANGUAGE = "recognition_language"
 
@@ -61,6 +62,7 @@ object Config {
         val preferred = prefs.getString(KEY_PREFERRED_LLM, LLM_GEMINI) ?: LLM_GEMINI
         
         // Fallback if preferred is not available
+        if (preferred == LLM_ON_DEVICE) return preferred // On-device doesn't need API keys
         if (preferred == LLM_GEMINI && getGeminiApiKey(context).isBlank()) {
             if (getSambaNovaApiKey(context).isNotBlank()) return LLM_SAMBANOVA
         }

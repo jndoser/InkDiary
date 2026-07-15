@@ -28,6 +28,7 @@ class DailyDetailActivity : AppCompatActivity() {
     private lateinit var adapter: DailyDetailAdapter
     private var selectedDate: String? = null
     private lateinit var llmService: LLMService
+    private var isGeneratingSummary = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,51 +60,156 @@ class DailyDetailActivity : AppCompatActivity() {
         loadConversation()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        (llmService as? OnDeviceLLMService)?.close()
+    }
+
+    private fun getActiveLLMName(): String {
+        return when (Config.getPreferredLLM(this)) {
+            Config.LLM_GEMINI -> "Gemini"
+            Config.LLM_SAMBANOVA -> "SambaNova"
+            Config.LLM_ON_DEVICE -> "On-Device"
+            else -> "Unknown"
+        }
+    }
+
+    /**
+     * For on-device mode: download model if needed, then load it into memory.
+     * Cloud modes are a no-op success.
+     */
+    private suspend fun prepareLlmForSummary(): Result<Unit> {
+        if (Config.getPreferredLLM(this) != Config.LLM_ON_DEVICE) {
+            return Result.success(Unit)
+        }
+
+        val onDevice = llmService as? OnDeviceLLMService
+            ?: return Result.failure(Exception("On-device service unavailable"))
+
+        if (!ModelDownloadManager.isModelDownloaded(this)) {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    this@DailyDetailActivity,
+                    "Downloading offline AI model (first time only)…",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            val download = ModelDownloadManager.downloadModel(this)
+            if (download.isFailure) {
+                return Result.failure(
+                    download.exceptionOrNull()
+                        ?: Exception("Model download failed")
+                )
+            }
+        }
+
+        withContext(Dispatchers.Main) {
+            Toast.makeText(
+                this@DailyDetailActivity,
+                "Loading on-device model…",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+        return onDevice.ensureModelLoaded()
+    }
+
     private fun generateSummary() {
         val date = selectedDate ?: return
-        
+        if (isGeneratingSummary) {
+            Toast.makeText(this, "Summary already in progress…", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isGeneratingSummary = true
         lifecycleScope.launch(Dispatchers.IO) {
-            val dao = database.conversationDao()
-            val conversations = dao.getConversationsByDate(date)
-            if (conversations.isEmpty()) return@launch
+            try {
+                val dao = database.conversationDao()
+                val conversations = dao.getConversationsByDate(date)
+                if (conversations.isEmpty()) return@launch
 
-            val existingSummary = dao.getSummaryByDate(date)
-            
-            if (existingSummary != null && existingSummary.lastConversationCount == conversations.size) {
-                Log.d("DailyDetail", "Showing existing summary")
-                withContext(Dispatchers.Main) {
-                    showSummaryScreen(date, existingSummary.summary)
+                val existingSummary = dao.getSummaryByDate(date)
+
+                // Don't treat prior API error strings as valid cached summaries
+                val cachedIsValid = existingSummary != null &&
+                    existingSummary.lastConversationCount == conversations.size &&
+                    !existingSummary.summary.startsWith("API_ERROR:")
+
+                if (cachedIsValid) {
+                    Log.d("DailyDetail", "Showing existing summary")
+                    withContext(Dispatchers.Main) {
+                        showSummaryScreen(date, existingSummary!!.summary)
+                    }
+                    return@launch
                 }
-                return@launch
-            }
 
-            // Need new summary
-            val llmName = if (Config.getPreferredLLM(this@DailyDetailActivity) == Config.LLM_GEMINI) "Gemini" else "SambaNova"
-            withContext(Dispatchers.Main) {
-                Toast.makeText(this@DailyDetailActivity, "Generating summary ($llmName)...", Toast.LENGTH_SHORT).show()
-            }
-
-            val fullText = conversations.joinToString("\n") { 
-                "${if (it.role == "user") "User" else "AI"}: ${it.content}"
-            }
-
-            val prompt = "Please summarize the following conversation from my diary for the day $date. Be concise and empathetic. Respond with just the summary in 3-5 sentences.\n\n$fullText"
-            
-            val response = llmService.generateResponse(prompt)
-
-            if (response != null) {
-                val newSummary = DailySummary(
-                    date = date,
-                    summary = response,
-                    lastConversationCount = conversations.size
-                )
-                dao.insertSummary(newSummary)
+                val llmName = getActiveLLMName()
                 withContext(Dispatchers.Main) {
-                    showSummaryScreen(date, response)
+                    Toast.makeText(
+                        this@DailyDetailActivity,
+                        "Preparing summary ($llmName)…",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
-            } else {
+
+                val prepare = prepareLlmForSummary()
+                if (prepare.isFailure) {
+                    val msg = prepare.exceptionOrNull()?.localizedMessage ?: "unknown error"
+                    Log.e("DailyDetail", "Failed to prepare LLM: $msg")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@DailyDetailActivity,
+                            "Failed to prepare $llmName: $msg",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    return@launch
+                }
+
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@DailyDetailActivity, "Failed to generate summary ($llmName). Check your API quota or connection.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@DailyDetailActivity,
+                        "Generating summary ($llmName)…",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+                val fullText = conversations.joinToString("\n") {
+                    "${if (it.role == "user") "User" else "AI"}: ${it.content}"
+                }
+
+                val prompt =
+                    "Please summarize the following conversation from my diary for the day $date. " +
+                        "Be concise and empathetic. Respond with just the summary in 3-5 sentences.\n\n$fullText"
+
+                val response = llmService.generateResponse(prompt)
+
+                if (response != null && !response.startsWith("API_ERROR:")) {
+                    val newSummary = DailySummary(
+                        date = date,
+                        summary = response,
+                        lastConversationCount = conversations.size
+                    )
+                    dao.insertSummary(newSummary)
+                    withContext(Dispatchers.Main) {
+                        showSummaryScreen(date, response)
+                    }
+                } else {
+                    val errorDetail = response
+                        ?.removePrefix("API_ERROR: ")
+                        ?.ifBlank { null }
+                        ?: "No response"
+                    Log.e("DailyDetail", "Summary generation failed: $errorDetail")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@DailyDetailActivity,
+                            "Failed to generate summary ($llmName): $errorDetail",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isGeneratingSummary = false
                 }
             }
         }

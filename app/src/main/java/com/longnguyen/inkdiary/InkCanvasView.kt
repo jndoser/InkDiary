@@ -43,6 +43,12 @@ class InkCanvasView @JvmOverloads constructor(
     private data class InkPoint(val x: Float, val y: Float, val pressure: Float, val timeMs: Long)
     private class Stroke { val points = java.util.concurrent.CopyOnWriteArrayList<InkPoint>() }
 
+    // Wall-clock base used so ML Kit gets monotonic millisecond timestamps.
+    // Onyx pen timestamps are device-specific and often not wall-clock ms, which
+    // hurts long multi-stroke recognition (especially Vietnamese).
+    private var wallClockBaseMs: Long = 0L
+    private var penTimeBase: Long = -1L
+
     private val pauseHandler = Handler(Looper.getMainLooper())
     private val pauseDelayMs = 2000L
     private var onPauseListener: (() -> Unit)? = null
@@ -253,20 +259,36 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     private fun collectPoint(rawX: Float, rawY: Float, p: Float, t: Long) {
+        // Deduplicate using raw pen timestamp when available.
         if (t > 0 && lastProcessedTimestamp > 0 && t <= lastProcessedTimestamp) return
-        lastProcessedTimestamp = t
+        if (t > 0) lastProcessedTimestamp = t
 
         val x = rawX - viewLocation[0]
         val y = rawY - viewLocation[1]
 
         if (x < -100 || x > width + 100 || y < -100 || y > height + 100) return
 
+        // Normalize to wall-clock ms for ML Kit (Google samples use System.currentTimeMillis()).
+        val timeMs = normalizeTimestamp(t)
+
         if (currentStroke == null) {
             currentStroke = Stroke().also { strokes.add(it) }
             Log.d("InkCanvasView", "Starting new stroke at ($x, $y)")
         }
 
-        currentStroke?.points?.add(InkPoint(x, y, p, t))
+        currentStroke?.points?.add(InkPoint(x, y, p, timeMs))
+    }
+
+    private fun normalizeTimestamp(penT: Long): Long {
+        val now = System.currentTimeMillis()
+        if (penT <= 0L) return now
+        if (penTimeBase < 0L) {
+            penTimeBase = penT
+            wallClockBaseMs = now
+        }
+        // Keep deltas from the pen stream; map onto wall clock for absolute ms.
+        val delta = penT - penTimeBase
+        return if (delta >= 0L) wallClockBaseMs + delta else now
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -401,6 +423,9 @@ class InkCanvasView @JvmOverloads constructor(
         pauseHandler.removeCallbacks(pauseRunnable)
         strokes.clear()
         currentStroke = null
+        lastProcessedTimestamp = -1L
+        penTimeBase = -1L
+        wallClockBaseMs = 0L
         canvasBitmap?.eraseColor(Color.TRANSPARENT)
 
         // Exit animation mode first so the GC refresh below isn't immediately
@@ -442,6 +467,9 @@ class InkCanvasView @JvmOverloads constructor(
         strokes.clear()
         // If there's an active stroke being built, keep it but move it to the new empty strokes list
         currentStroke?.let { strokes.add(it) }
+        lastProcessedTimestamp = -1L
+        penTimeBase = -1L
+        wallClockBaseMs = 0L
         canvasBitmap?.eraseColor(Color.TRANSPARENT)
         // Use GC to ensure a completely clean slate when transitioning from AI response
         drawSurface(UpdateMode.GC)
@@ -525,6 +553,22 @@ class InkCanvasView @JvmOverloads constructor(
         }
         return builder.build()
     }
+
+    /**
+     * Export strokes as point lists for segmented recognition.
+     * Coordinates are in this view's space; timestamps are wall-clock ms.
+     */
+    fun exportStrokePoints(): List<List<HandwritingRecognizer.StrokePoint>> {
+        val currentStrokes = strokes.toList()
+        Log.d("InkCanvasView", "Exporting ${currentStrokes.size} stroke lists for recognition")
+        return currentStrokes.mapNotNull { stroke ->
+            val pts = stroke.points.toList()
+            if (pts.size < 2) return@mapNotNull null
+            pts.map { p -> HandwritingRecognizer.StrokePoint(p.x, p.y, p.timeMs) }
+        }
+    }
+
+    fun strokeCount(): Int = strokes.size
 
     fun refreshScreenGc() {
         Log.d("InkCanvasView", "refreshScreenGc called")
