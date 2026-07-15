@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private val hideViewsRunnable = Runnable {
+        replyView.resetContent()
         replyView.visibility = View.GONE
         if (Config.isDebugEnabled(this@MainActivity)) {
             debugText.visibility = View.VISIBLE
@@ -70,7 +71,88 @@ class MainActivity : AppCompatActivity() {
             debugText.visibility = View.GONE
             Log.d("InkDiaryDebug", "debugText set to GONE after delay")
         }
-        Log.d("InkDiaryDebug", "replyView set to GONE after delay")
+    }
+
+    // Invalidates in-flight white-wipe → reveal callbacks when the user starts a new note.
+    private var replyPresentGeneration = 0
+    private var wipeInFlight = false
+    private var pendingAfterWipeMessage: String? = null
+    /** Uptime ms of the last opaque white surface wipe (0 = never). */
+    private var lastWhiteWipeAtMs = 0L
+    /** True while the pen surface is still an opaque white cover (not yet opened for reply). */
+    private var whiteCoverActive = false
+    /** How long after a white wipe before we start typewriter text. */
+    private val whiteWipeSettleMs = 280L
+
+    /** Cancel pending hide/show reply work and prepare a clean reply surface. */
+    private fun cancelPendingReplyUi() {
+        handler.removeCallbacks(hideViewsRunnable)
+        replyPresentGeneration++
+        wipeInFlight = false
+        pendingAfterWipeMessage = null
+        inkCanvas.stopReplyAnimation()
+        replyView.resetContent()
+    }
+
+    private fun markWhiteWiped() {
+        lastWhiteWipeAtMs = android.os.SystemClock.uptimeMillis()
+        whiteCoverActive = true
+    }
+
+    /**
+     * Draw AI text on the TOP pen surface. Pen overlay stays off.
+     * Never GC and never open transparent — both re-show the previous answer on Boox.
+     */
+    private fun showReplyMessage(sessionId: Int, message: String, delayMs: Long = 80L) {
+        if (sessionId != currentSessionId) return
+        handler.removeCallbacks(hideViewsRunnable)
+        isShowingAiContent = true
+        if (wipeInFlight) {
+            pendingAfterWipeMessage = message
+            return
+        }
+        replyView.visibility = View.GONE
+        inkCanvas.showReplyOnSurface(message, startDelayMs = delayMs)
+        whiteCoverActive = true
+    }
+
+    /**
+     * After white wipe (pen overlay OFF), draw [message] on the pen surface.
+     * No GC. No transparent open. No pen-overlay toggle.
+     */
+    private fun presentReplyAfterWipe(sessionId: Int, message: String) {
+        if (sessionId != currentSessionId) return
+        handler.removeCallbacks(hideViewsRunnable)
+        isShowingAiContent = true
+        pendingAfterWipeMessage = message
+
+        if (wipeInFlight) return
+
+        val gen = ++replyPresentGeneration
+        wipeInFlight = true
+
+        val now = android.os.SystemClock.uptimeMillis()
+
+        if (!whiteCoverActive) {
+            // Pen OFF + solid white. Never re-enable pen here (would flash previous AI).
+            inkCanvas.wipeToWhite(useFullGc = false, suppressAnimationForGc = false, reenablePen = false)
+            markWhiteWiped()
+        }
+        replyView.visibility = View.GONE
+
+        val settleBase = if (lastWhiteWipeAtMs > 0L) lastWhiteWipeAtMs else now
+        val delay = (whiteWipeSettleMs - (now - settleBase)).coerceAtLeast(80L)
+
+        handler.postDelayed({
+            wipeInFlight = false
+            if (sessionId != currentSessionId || gen != replyPresentGeneration) return@postDelayed
+            val msg = pendingAfterWipeMessage ?: message
+            pendingAfterWipeMessage = null
+            replyView.visibility = View.GONE
+            inkCanvas.showReplyOnSurface(msg, startDelayMs = 80L)
+            whiteCoverActive = true
+            Log.d("InkDiaryDebug", "presentReplyAfterWipe: surface text only, pen overlay off")
+        }, delay)
     }
 
     private var recognizerIsReady = false
@@ -315,59 +397,52 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        // Ensure replyView is hidden initially
+        // Reply text is drawn on the pen SurfaceView only. Keep this under-layer GONE
+        // so it can never contribute previous-answer pixels on e-ink.
+        replyView.resetContent()
         replyView.visibility = View.GONE
 
-    // Stylus nib down → clear the AI response so the user can write fresh.
+        // Stylus nib down → clear the AI response so the user can write fresh.
         // NOTE: All Onyx RawInputCallback methods run on the MAIN thread on Boox (confirmed
         // via logcat: PID==TID). So the listener is called on the main thread — no post{}
         // needed, but runOnUiThread{} is kept as a safe guard (it's a no-op on main thread).
-        //
-        // We use clearAll() (not clearForNewSession()) because clearAll() calls
-        // touchHelper.setRawDrawingEnabled(false/true) which resets the Onyx raw drawing
-        // overlay — essential for clearing ghost pixels from the e-ink screen.
         inkCanvas.setOnTouchDownListener {
-            val hasActiveContent = isShowingAiContent
+            // Also check canvas reply text — isShowingAiContent can desync after edge cases.
+            val hasActiveContent = isShowingAiContent || inkCanvas.hasReplyContent()
 
-            Log.d("InkDiaryDebug", "setOnTouchDownListener: hasActiveContent=$hasActiveContent")
+            Log.d(
+                "InkDiaryDebug",
+                "setOnTouchDownListener: hasActiveContent=$hasActiveContent " +
+                    "(flag=$isShowingAiContent, reply=${inkCanvas.hasReplyContent()})"
+            )
 
             if (hasActiveContent) {
                 Log.d("InkDiaryDebug", "Clearing AI response and status.")
                 isShowingAiContent = false
                 currentSessionId++
-                
-                // Cancel any pending visibility hide animations
-                handler.removeCallbacks(hideViewsRunnable)
 
-                // 1. Keep views VISIBLE so Android actually calls onDraw().
-                // If set to INVISIBLE or GONE immediately, Android skips drawing,
-                // and the Onyx E-ink controller NEVER physically clears the screen!
-                
-                // Clear replyView content (blanks text, sets GC mode internally, invalidates)
-                // This triggers a GC refresh on the HandwrittenReplyView.
-                replyView.clear()
-                
+                // Cancel any pending visibility hide / reply animations
+                cancelPendingReplyUi()
+
+                // Physically erase previous AI answer from the e-ink panel, then
+                // re-enable a clean pen for the new note. (Do not call
+                // setInteractionEnabled in a way that turns raw drawing back on
+                // before the wipe — that kept the previous answer on screen.)
+                inkCanvas.setInteractionEnabled(true)
+                inkCanvas.dismissReplyForNewWriting()
+                replyView.resetContent()
+                replyView.visibility = View.GONE
+                markWhiteWiped()
+
                 // Clear data content
                 debugText.text = ""
                 debugText.setBackgroundColor(Color.TRANSPARENT)
                 try {
-                    EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC)
+                    EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.DU)
                     debugText.invalidate()
                 } catch (e: Exception) {}
-                
-                // 2. Re-enable interaction
-                inkCanvas.setInteractionEnabled(true)
 
-                // 3. Clear the ink overlay AFTER a short delay (50ms) to avoid
-                // conflicting GC refreshes on the e-ink controller. The replyView.clear()
-                // above triggers its own GC; if clearAll() fires simultaneously, one GC
-                // can cancel the other, leaving ghost text on the e-ink screen.
-                handler.postDelayed({
-                    inkCanvas.clearAll(suppressAnimationForGc = true)
-                }, 50)
-
-                // 4. Final hide (GONE) after 700ms (50ms delay + 650ms for GC refresh)
-                handler.postDelayed(hideViewsRunnable, 700)
+                handler.postDelayed(hideViewsRunnable, 900)
             }
         }
 
@@ -396,16 +471,28 @@ class MainActivity : AppCompatActivity() {
                 return@setOnPauseListener
             }
 
-            runOnUiThread {
-                debugText.visibility = View.VISIBLE
-                debugText.text = "Recognizing..."
-                isShowingAiContent = true
-                Log.d("InkDiaryDebug", "setOnPauseListener: set isShowingAiContent=true")
-            }
+            // Export strokes BEFORE wiping the surface.
             val sessionId = ++currentSessionId
             val strokePoints = inkCanvas.exportStrokePoints()
             val canvasW = inkCanvas.width.toFloat().coerceAtLeast(1f)
             val canvasH = inkCanvas.height.toFloat().coerceAtLeast(1f)
+
+            runOnUiThread {
+                handler.removeCallbacks(hideViewsRunnable)
+                isShowingAiContent = true
+                debugText.visibility = View.VISIBLE
+                debugText.text = "Recognizing..."
+                // Pen overlay OFF + solid white. Keep pen OFF through Thinking/reply
+                // (re-enabling the overlay was replaying the previous AI frame on Boox).
+                inkCanvas.wipeToWhite(
+                    useFullGc = false,
+                    suppressAnimationForGc = false,
+                    reenablePen = false
+                )
+                replyView.visibility = View.GONE
+                markWhiteWiped()
+                Log.d("InkDiaryDebug", "setOnPauseListener: pen off + white wipe")
+            }
 
             Log.d(
                 "MainActivity",
@@ -425,6 +512,7 @@ class MainActivity : AppCompatActivity() {
 
                     // 1. Immediately update UI before ANY network/processing happens
                     runOnUiThread {
+                        if (sessionId != currentSessionId) return@runOnUiThread
                         if (text.isBlank()) {
                             debugText.text = "No text recognized"
                         } else {
@@ -432,25 +520,17 @@ class MainActivity : AppCompatActivity() {
                         }
                         debugText.setBackgroundColor(Color.parseColor("#333333"))
 
-                        // 2. Clear the ink immediately so the user knows it's accepted
-                        inkCanvas.clearAll()
-
                         try {
                             EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.DU)
                             debugText.invalidate()
-                        } catch(e:Exception){}
+                        } catch (e: Exception) {}
                     }
 
                     if (text.isBlank()) {
                         runOnUiThread {
                             if (sessionId != currentSessionId) return@runOnUiThread
-                            replyView.visibility = View.VISIBLE
-                            handler.postDelayed({
-                                if (sessionId == currentSessionId) {
-                                    replyView.setTextAndAnimate("(Could not recognize handwriting)")
-                                }
-                            }, 300)
-                            isShowingAiContent = true
+                            // Surface already white from pause; settle + reveal message.
+                            presentReplyAfterWipe(sessionId, "(Could not recognize handwriting)")
                         }
                         return@recognize
                     }
@@ -459,18 +539,11 @@ class MainActivity : AppCompatActivity() {
                     Log.d("MainActivity", "Recognized text: '$text'. Using $llmName")
 
                     lifecycleScope.launch {
-                        // Show status that we are now calling the API
+                        // Surface was wiped white at pause; reveal "Thinking..." after settle.
                         runOnUiThread {
                             if (sessionId != currentSessionId) return@runOnUiThread
                             debugText.text = "Recognized: \"$text\"\n(Thinking...)"
-                            // Show thinking message in the main area
-                            replyView.visibility = View.VISIBLE
-                            handler.postDelayed({
-                                if (sessionId == currentSessionId) {
-                                    replyView.setTextAndAnimate("Thinking...")
-                                }
-                            }, 300)
-                            isShowingAiContent = true
+                            presentReplyAfterWipe(sessionId, "Thinking...")
                         }
 
                         // Cloud APIs need internet; on-device LLM works fully offline.
@@ -478,13 +551,10 @@ class MainActivity : AppCompatActivity() {
                             runOnUiThread {
                                 if (sessionId != currentSessionId) return@runOnUiThread
                                 debugText.text = "Recognized: \"$text\"\n(Offline)"
-                                replyView.visibility = View.VISIBLE
-                                handler.postDelayed({
-                                    if (sessionId == currentSessionId) {
-                                        replyView.setTextAndAnimate("I'm offline. Please check your WiFi connection, or switch to On-Device (Offline) AI.")
-                                    }
-                                }, 300)
-                                isShowingAiContent = true
+                                showReplyMessage(
+                                    sessionId,
+                                    "I'm offline. Please check your WiFi connection, or switch to On-Device (Offline) AI."
+                                )
                             }
                             return@launch
                         }
@@ -518,24 +588,16 @@ class MainActivity : AppCompatActivity() {
                                 }
                                 Log.d("MainActivity", "Updating UI with AI response")
 
-                                // Bounce the Onyx touch layer to prevent stylus input from freezing
-                                inkCanvas.bounceTouchHelper()
+                                // Do NOT bounce/re-enable the pen overlay here — that recommits
+                                // the previous AI framebuffer on Boox (full answer flash).
 
                                 debugText.text = "Recognized: \"$text\"" // Keep the recognized text clean
-                                replyView.visibility = View.VISIBLE
-                                
-                                // Delay starting the animation slightly (300ms) to ensure the 
-                                // inkCanvas.clearAll() GC refresh has physically completed 
-                                // on the screen before the typewriter DU mode starts.
-                                handler.postDelayed({
-                                    if (sessionId == currentSessionId) {
-                                        replyView.setTextAndAnimate(response)
-                                    }
-                                }, 300)
-
-                                isShowingAiContent = true
+                                showReplyMessage(sessionId, response, delayMs = 100L)
                                 Log.d("InkDiaryDebug", "UI Success: set isShowingAiContent=true")
-                                try { EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC); debugText.invalidate() } catch(e:Exception){}
+                                try {
+                                    EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.DU)
+                                    debugText.invalidate()
+                                } catch (e: Exception) {}
                             }
                         } else {
                             // Error path
@@ -548,25 +610,16 @@ class MainActivity : AppCompatActivity() {
                                     return@runOnUiThread
                                 }
 
-                                // Bounce the Onyx touch layer to prevent stylus input from freezing
-                                inkCanvas.bounceTouchHelper()
-
                                 debugText.setBackgroundColor(Color.RED)
                                 debugText.text = "Recognized: \"$text\"\nERROR: $userFriendlyError"
-                                replyView.visibility = View.VISIBLE
-                                handler.postDelayed({
-                                    if (sessionId == currentSessionId) {
-                                        replyView.setTextAndAnimate("I encountered an error: $userFriendlyError")
-                                    }
-                                }, 300)
-                                isShowingAiContent = true
+                                showReplyMessage(sessionId, "I encountered an error: $userFriendlyError")
                                 Log.d("InkDiaryDebug", "UI Error: set isShowingAiContent=true")
 
                                 handler.postDelayed({
                                     try {
                                         EpdController.setViewDefaultUpdateMode(debugText, UpdateMode.GC)
                                         debugText.invalidate()
-                                    } catch(e:Exception){}
+                                    } catch (e: Exception) {}
                                 }, 500)
                             }
                         }
@@ -579,6 +632,15 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             )
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // After returning from History / sleep, re-prime the Onyx pen pipeline
+        // so the first stylus stroke is not cold.
+        if (::inkCanvas.isInitialized) {
+            inkCanvas.post { inkCanvas.warmUpPenPipeline() }
         }
     }
 

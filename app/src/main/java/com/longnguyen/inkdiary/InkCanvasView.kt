@@ -9,6 +9,7 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import androidx.core.content.res.ResourcesCompat
 import com.google.mlkit.vision.digitalink.Ink
 import com.onyx.android.sdk.api.device.epd.EpdController
 import com.onyx.android.sdk.api.device.epd.UpdateMode
@@ -40,6 +41,39 @@ class InkCanvasView @JvmOverloads constructor(
         isAntiAlias = false
     }
 
+    // AI reply is drawn ON this top SurfaceView (never revealed from a view underneath).
+    // Opening the surface transparent re-flashes the previous answer still baked into
+    // the under-layer e-ink pixels — so reply text must live on this layer.
+    private val replyTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        textSize = 42f
+        typeface = ResourcesCompat.getFont(context, R.font.kalam_regular)
+            ?: Typeface.create("cursive", Typeface.NORMAL)
+        strokeWidth = 1.1f
+        style = Paint.Style.FILL_AND_STROKE
+    }
+    private val replyHandler = Handler(Looper.getMainLooper())
+    private var replyFullText: String = ""
+    private var replyDisplayedText: String = ""
+    private var replyWords: List<String> = emptyList()
+    private var replyWordIndex = 0
+    private val replyWordDelayMs = 120L
+    private val replyTypewriterRunnable = object : Runnable {
+        override fun run() {
+            if (replyWordIndex >= replyWords.size) {
+                Log.d("InkCanvasView", "Reply typewriter complete")
+                return
+            }
+            replyWordIndex++
+            replyDisplayedText = replyWords.take(replyWordIndex).joinToString(" ")
+            paintReplyOntoBitmap()
+            drawSurface(UpdateMode.DU)
+            if (replyWordIndex < replyWords.size) {
+                replyHandler.postDelayed(this, replyWordDelayMs)
+            }
+        }
+    }
+
     private data class InkPoint(val x: Float, val y: Float, val pressure: Float, val timeMs: Long)
     private class Stroke { val points = java.util.concurrent.CopyOnWriteArrayList<InkPoint>() }
 
@@ -66,10 +100,17 @@ class InkCanvasView @JvmOverloads constructor(
     // When true, onBeginRawDrawing will do an extra overlay reset to clear
     // lingering eraser ghost marks from the Onyx raw drawing layer.
     @Volatile private var wasErasing = false
+    // Avoid re-running expensive reflection / EPD mode switches on every stroke.
+    @Volatile private var eraserConfigured = false
+    @Volatile private var animationModeActive = false
+    @Volatile private var strokeParamsReady = false
 
     private val pauseRunnable = Runnable {
         Log.d("InkCanvasView", "pauseRunnable executing...")
-        onPauseListener?.invoke() 
+        // Leave A2/animation mode only when the user stops writing (before recognition).
+        // Exiting after every stroke forces a cold re-enter on the next first stroke.
+        exitPenDrawingMode()
+        onPauseListener?.invoke()
     }
 
     private val viewLocation = IntArray(2)
@@ -93,17 +134,27 @@ class InkCanvasView @JvmOverloads constructor(
                 onTouchDownListener?.invoke()
 
                 if (!isInteractionEnabled) return
+                // After wipeToWhite / during AI reply, pen overlay is locked off.
+                // Do NOT re-enable it here — that was replaying the previous AI frame.
+                if (!penOverlayAllowed) {
+                    Log.d("InkCanvasView", "onBeginRawDrawing ignored (pen overlay locked off)")
+                    return
+                }
                 lastProcessedTimestamp = -1L
                 getLocationOnScreen(viewLocation)
+                // Cancel pending pause so continuous writing stays in fast pen mode.
+                pauseHandler.removeCallbacks(pauseRunnable)
                 try {
                     // If the previous interaction was an erase, force-clear the Onyx raw
                     // drawing overlay to remove lingering eraser ghost marks (the thick
                     // strike-through lines) before starting a new drawing stroke.
                     if (wasErasing) {
                         wasErasing = false
+                        strokeParamsReady = false
                         Log.d("InkCanvasView", "Transitioning from eraser → draw: resetting overlay")
                         touchHelper?.setRawDrawingEnabled(false)
                         touchHelper?.setRawDrawingEnabled(true)
+                        touchHelper?.setRawDrawingRenderEnabled(true)
                     }
 
                     val suppressCount = gcSuppressCount
@@ -115,36 +166,46 @@ class InkCanvasView @JvmOverloads constructor(
                             // This is the last suppressed callback. Schedule enterAnimationUpdate
                             // after 500ms so the GC has time to physically complete.
                             postDelayed({
-                                try { EpdDeviceManager.enterAnimationUpdate(true) } catch (e: Exception) {}
+                                if (!penOverlayAllowed) return@postDelayed
+                                enterPenDrawingMode(force = true)
                                 Log.d("InkCanvasView", "enterAnimationUpdate fired after GC delay")
                             }, 500)
                         }
                         Log.d("InkCanvasView", "Drawing started (GC suppress #$suppressCount remaining)")
                     } else {
-                        EpdDeviceManager.enterAnimationUpdate(true)
-                        Log.d("InkCanvasView", "Drawing started")
+                        // Cheap no-op if already in animation mode (keeps first visible ink fast).
+                        enterPenDrawingMode()
+                        Log.d("InkCanvasView", "Drawing started (animActive=$animationModeActive)")
                     }
-                    enableNativeEraser()
-                    touchHelper?.setStrokeStyle(0)
-                    touchHelper?.setStrokeWidth(4f)
+
+                    // Stroke params + eraser only when needed (reflection is expensive).
+                    if (!strokeParamsReady) {
+                        touchHelper?.setStrokeStyle(0)
+                        touchHelper?.setStrokeWidth(4f)
+                        strokeParamsReady = true
+                    }
+                    if (!eraserConfigured) {
+                        enableNativeEraser()
+                    }
 
                     // CRITICAL FIX: Re-enable raw drawing RENDER explicitly.
-                    // When clearAll() toggles setRawDrawingEnabled(false/true), 
-                    // some Onyx firmware versions default to RENDER=FALSE, causing 
+                    // When clearAll() toggles setRawDrawingEnabled(false/true),
+                    // some Onyx firmware versions default to RENDER=FALSE, causing
                     // the "invisible ink" at the start of the stroke.
                     touchHelper?.setRawDrawingRenderEnabled(true)
                 } catch (e: Exception) {}
             }
 
             override fun onEndRawDrawing(b: Boolean, touchPoint: TouchPoint) {
-                try { EpdDeviceManager.exitAnimationUpdate(true) } catch (e: Exception) {}
+                // Keep animation/pen mode active between strokes so the next character
+                // does not pay the cold EPD mode-switch cost again.
                 commitStrokeToBitmap(currentStroke)
                 currentStroke = null
-                post { 
-                    drawSurface(UpdateMode.DU) 
+                post {
+                    drawSurface(UpdateMode.DU)
                     pauseHandler.removeCallbacks(pauseRunnable)
                     pauseHandler.postDelayed(pauseRunnable, pauseDelayMs)
-                    Log.d("InkCanvasView", "Drawing ended, pause timer started")
+                    Log.d("InkCanvasView", "Drawing ended, pause timer started (stay in pen mode)")
                 }
             }
 
@@ -163,28 +224,30 @@ class InkCanvasView @JvmOverloads constructor(
                 pauseHandler.removeCallbacks(pauseRunnable)
                 getLocationOnScreen(viewLocation)
                 currentStroke = null
-                try { 
-                    EpdDeviceManager.enterAnimationUpdate(true) 
-                    enableNativeEraser()
+                try {
+                    enterPenDrawingMode()
+                    if (!eraserConfigured) enableNativeEraser()
                     // Set thick marker style for the eraser ghost line
                     touchHelper?.setStrokeStyle(1)
                     touchHelper?.setStrokeWidth(30f)
+                    strokeParamsReady = false
                 } catch (e: Exception) {}
                 Log.d("InkCanvasView", "Erasing started at (${touchPoint.x}, ${touchPoint.y})")
             }
             
             override fun onEndRawErasing(b: Boolean, touchPoint: TouchPoint) {
-                try { EpdDeviceManager.exitAnimationUpdate(true) } catch (e: Exception) {}
                 // Mark that we were erasing so onBeginRawDrawing can do a
                 // clean overlay reset before the next drawing stroke.
                 wasErasing = true
-                post { 
+                strokeParamsReady = false
+                post {
                     // Reset stroke params to drawing mode BEFORE toggling
                     // setRawDrawingEnabled — this ensures the Onyx overlay is
                     // re-initialized with drawing params, not the thick eraser style.
                     try {
                         touchHelper?.setStrokeStyle(0)
                         touchHelper?.setStrokeWidth(4f)
+                        strokeParamsReady = true
                     } catch (e: Exception) {}
 
                     // Clear raw drawing overlay (removes the eraser ghost line)
@@ -192,7 +255,7 @@ class InkCanvasView @JvmOverloads constructor(
                         touchHelper?.setRawDrawingEnabled(false)
                         touchHelper?.setRawDrawingEnabled(true)
                         touchHelper?.setRawDrawingRenderEnabled(true)
-                        enableNativeEraser() 
+                        if (!eraserConfigured) enableNativeEraser()
                     } catch (e: Exception) {}
 
                     // Use DU mode to prevent full screen flash (flicking)
@@ -223,12 +286,74 @@ class InkCanvasView @JvmOverloads constructor(
                 enableNativeEraser()
                 setSingleRegionMode()
                 setStrokeWidth(4f)
-                setStrokeStyle(0) 
+                setStrokeStyle(0)
             }
+            strokeParamsReady = true
             EpdController.setScreenHandWritingPenState(this, EpdPenManager.PEN_DRAWING)
             try { EpdController.enablePost(this, 1) } catch (e: Exception) {}
+
+            // Prime the pen/EPD pipeline so the user's first real stroke is not cold.
+            // First enterAnimationUpdate on Boox is relatively expensive (~100–300ms).
+            post { warmUpPenPipeline() }
         } catch (e: Exception) {
             Log.e("InkDiary", "Onyx setup failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Pre-activate Onyx raw drawing + A2 animation mode so first stylus ink appears
+     * without the usual cold-start lag. Safe to call multiple times.
+     */
+    fun warmUpPenPipeline() {
+        if (!isInteractionEnabled || touchHelper == null) return
+        // Never warm/re-enable pen while AI reply owns the surface or overlay is locked —
+        // enabling the overlay mid-reply recommits the previous AI frame on Boox.
+        if (!penOverlayAllowed || hasReplyContent()) {
+            Log.d("InkCanvasView", "warmUpPenPipeline skipped (pen locked or reply active)")
+            return
+        }
+        try {
+            touchHelper?.setRawDrawingEnabled(true)
+            touchHelper?.setRawDrawingRenderEnabled(true)
+            if (!strokeParamsReady) {
+                touchHelper?.setStrokeStyle(0)
+                touchHelper?.setStrokeWidth(4f)
+                strokeParamsReady = true
+            }
+            if (!eraserConfigured) enableNativeEraser()
+            enterPenDrawingMode(force = true)
+            // Drop back out of animation mode after a short prime so the screen
+            // does not stay in permanent A2; next stroke re-enters quickly because
+            // the EPD controller and pen overlay are already initialized.
+            postDelayed({
+                if (currentStroke == null && gcSuppressCount == 0 && !hasReplyContent()) {
+                    exitPenDrawingMode()
+                    Log.d("InkCanvasView", "Pen pipeline warmed up")
+                }
+            }, 120)
+        } catch (e: Exception) {
+            Log.w("InkCanvasView", "Pen warmup failed: ${e.message}")
+        }
+    }
+
+    private fun enterPenDrawingMode(force: Boolean = false) {
+        if (animationModeActive && !force) return
+        try {
+            EpdDeviceManager.enterAnimationUpdate(true)
+            animationModeActive = true
+        } catch (e: Exception) {
+            Log.w("InkCanvasView", "enterAnimationUpdate failed: ${e.message}")
+        }
+    }
+
+    private fun exitPenDrawingMode() {
+        if (!animationModeActive) return
+        try {
+            EpdDeviceManager.exitAnimationUpdate(true)
+        } catch (e: Exception) {
+            Log.w("InkCanvasView", "exitAnimationUpdate failed: ${e.message}")
+        } finally {
+            animationModeActive = false
         }
     }
 
@@ -245,6 +370,7 @@ class InkCanvasView @JvmOverloads constructor(
             methods.find { it.name == "setEraserEnabled" }?.invoke(helper, true)
             methods.find { it.name == "setPenButtonEraserEnable" }?.invoke(helper, true)
             methods.find { it.name == "setPenButtonEraserEnabled" }?.invoke(helper, true)
+            eraserConfigured = true
         } catch (e: Exception) {
             Log.w("InkCanvasView", "Failed to enable native eraser: ${e.message}")
         }
@@ -347,6 +473,16 @@ class InkCanvasView @JvmOverloads constructor(
         drawSurface()
     }
 
+    // When true, the surface is filled opaque white and owns AI reply text / ink.
+    // When false, the surface is transparent (writing-only legacy path).
+    // IMPORTANT: AI replies must be drawn while this is true — never open transparent
+    // to "reveal" a HandwrittenReplyView underneath (that flashes the previous answer).
+    @Volatile private var surfaceFilledWhite = false
+    /** Bumps on every wipe so delayed pen-reenable from an older wipe cannot fire mid-reply. */
+    @Volatile private var wipeGeneration = 0
+    /** When false, onBeginRawDrawing must not re-enable the Onyx pen overlay. */
+    @Volatile private var penOverlayAllowed = true
+
     private fun drawSurface(mode: UpdateMode = UpdateMode.DU) {
         // Set mode BEFORE posting the canvas so the e-ink display uses the correct
         // waveform for THIS frame, not the next one.
@@ -359,9 +495,16 @@ class InkCanvasView @JvmOverloads constructor(
         } ?: return
 
         try {
-            // CRITICAL: MUST clear with TRANSPARENT so UI behind is visible
-            canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
-            canvasBitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+            if (surfaceFilledWhite) {
+                // Opaque white physically overwrites residual black pixels on e-ink.
+                // Transparent CLEAR does NOT repaint those pixels — residual remains.
+                canvas.drawColor(Color.WHITE)
+                canvasBitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+            } else {
+                // CRITICAL: clear with TRANSPARENT so UI behind is visible
+                canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+                canvasBitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+            }
         } finally {
             holder.unlockCanvasAndPost(canvas)
         }
@@ -381,8 +524,14 @@ class InkCanvasView @JvmOverloads constructor(
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        pauseHandler.removeCallbacksAndMessages(null)
+        stopReplyAnimation()
+        exitPenDrawingMode()
         touchHelper?.closeRawDrawing()
         touchHelper = null
+        eraserConfigured = false
+        strokeParamsReady = false
+        animationModeActive = false
     }
 
     fun setOnPauseListener(l: () -> Unit) { onPauseListener = l }
@@ -390,76 +539,279 @@ class InkCanvasView @JvmOverloads constructor(
 
     fun setInteractionEnabled(enabled: Boolean) {
         isInteractionEnabled = enabled
-        try {
-            touchHelper?.setRawDrawingEnabled(enabled)
-            touchHelper?.setRawDrawingRenderEnabled(enabled)
-        } catch (e: Exception) {
-            Log.e("InkCanvasView", "Failed to set interaction enabled: ${e.message}")
+        // Do NOT force the Onyx pen overlay on/off here.
+        // Enabling raw drawing while an AI reply is still on the panel recommits that
+        // frame (previous answer stays visible). Pen overlay is owned by
+        // disablePenOverlay / enablePenOverlay / wipeToWhite(reenablePen=...).
+        if (!enabled) {
+            disablePenOverlay()
         }
     }
 
     fun bounceTouchHelper() {
+        if (!penOverlayAllowed || hasReplyContent()) {
+            Log.d("InkCanvasView", "bounceTouchHelper skipped (pen locked or reply active)")
+            return
+        }
         try {
             touchHelper?.setRawDrawingEnabled(false)
             touchHelper?.setRawDrawingEnabled(true)
+            touchHelper?.setRawDrawingRenderEnabled(true)
         } catch (e: Exception) {
             Log.e("InkCanvasView", "Failed to bounce raw drawing: ${e.message}")
         }
     }
 
-    // suppressAnimationForGc = true when called from the nib-down listener (erasing AI response).
-    // This sets gcSuppressCount=2 to block enterAnimationUpdate in the next two
-    // onBeginRawDrawing callbacks, preventing the GC refresh from being cancelled.
-    fun clearAll(suppressAnimationForGc: Boolean = false) {
-        Log.d("InkCanvasView", "clearAll called (suppressAnim=$suppressAnimationForGc)")
-        
-        if (suppressAnimationForGc) {
-            // SET THIS FIRST! Before exiting animation or clearing bitmap.
-            // We use 2 to handle both the current nib-down and any potential
-            // callback from a setInteractionEnabled(true) call in MainActivity.
-            gcSuppressCount = 2
+    /**
+     * Hard-disable the Onyx pen overlay. While enabled, toggling it can recommit
+     * a previous full framebuffer (including the last AI answer) onto the panel.
+     */
+    fun disablePenOverlay() {
+        penOverlayAllowed = false
+        try {
+            touchHelper?.setRawDrawingRenderEnabled(false)
+            touchHelper?.setRawDrawingEnabled(false)
+        } catch (e: Exception) {
+            Log.e("InkCanvasView", "disablePenOverlay: ${e.message}")
         }
+    }
 
+    fun enablePenOverlay() {
+        penOverlayAllowed = true
+        try {
+            touchHelper?.setRawDrawingEnabled(true)
+            touchHelper?.setRawDrawingRenderEnabled(true)
+            touchHelper?.setStrokeStyle(0)
+            touchHelper?.setStrokeWidth(4f)
+            strokeParamsReady = true
+            if (!eraserConfigured) enableNativeEraser()
+        } catch (e: Exception) {
+            Log.e("InkCanvasView", "enablePenOverlay: ${e.message}")
+        }
+    }
+
+    /**
+     * User started a new note: erase AI reply from the panel and allow writing.
+     * Uses a full GC on already-white content so the previous answer actually
+     * leaves the e-ink panel (DU alone often leaves it fully visible on Boox).
+     */
+    fun dismissReplyForNewWriting() {
+        val gen = ++wipeGeneration
+        Log.d("InkCanvasView", "dismissReplyForNewWriting gen=$gen")
+
+        gcSuppressCount = 2
         pauseHandler.removeCallbacks(pauseRunnable)
+        stopReplyAnimation()
         strokes.clear()
         currentStroke = null
         lastProcessedTimestamp = -1L
         penTimeBase = -1L
         wallClockBaseMs = 0L
-        canvasBitmap?.eraseColor(Color.TRANSPARENT)
 
-        // Exit animation mode first so the GC refresh below isn't immediately
-        // overridden by enterAnimationUpdate() in onBeginRawDrawing.
-        try { EpdDeviceManager.exitAnimationUpdate(true) } catch (e: Exception) {}
+        // 1) Drop pen overlay so it cannot keep showing the AI frame.
+        disablePenOverlay()
+        exitPenDrawingMode()
+        strokeParamsReady = false
 
-        if (!suppressAnimationForGc) {
-            // Immediate toggle when NOT in a nib-down event.
-            try {
-                touchHelper?.setRawDrawingEnabled(false)
-                touchHelper?.setRawDrawingEnabled(true)
-            } catch (e: Exception) {
-                Log.e("InkCanvasView", "Failed to toggle raw drawing: ${e.message}")
-            }
-        } else {
-            // When called from nib-down (suppressed mode), we can't toggle immediately
-            // because it causes "invisible ink". Instead, schedule the toggle AFTER
-            // the GC refresh has physically completed on the e-ink panel (~600ms).
-            // This ensures the Onyx raw drawing overlay is properly reset, which is
-            // critical for physically clearing the AI response text from the screen.
-            postDelayed({
-                try {
-                    touchHelper?.setRawDrawingEnabled(false)
-                    touchHelper?.setRawDrawingEnabled(true)
-                    touchHelper?.setRawDrawingRenderEnabled(true)
-                    enableNativeEraser()
-                    Log.d("InkCanvasView", "Delayed overlay reset completed after GC")
-                } catch (e: Exception) {
-                    Log.e("InkCanvasView", "Failed delayed toggle: ${e.message}")
-                }
-            }, 600)
+        // 2) Pure white software buffer (clears typewriter glyphs from bitmap).
+        surfaceFilledWhite = true
+        canvasBitmap?.eraseColor(Color.WHITE)
+        bitmapCanvas?.drawColor(Color.WHITE)
+
+        // 3) DU white first (content is already white in buffer).
+        drawSurface(UpdateMode.DU)
+
+        // 4) GC settle on white — required to physically clear previous AI text on Boox.
+        //    Doing GC after the buffer is white clears the panel; GC on residual black
+        //    is what used to flash the old answer during Thinking.
+        postDelayed({
+            if (gen != wipeGeneration) return@postDelayed
+            canvasBitmap?.eraseColor(Color.WHITE)
+            bitmapCanvas?.drawColor(Color.WHITE)
+            drawSurface(UpdateMode.GC)
+        }, 50)
+
+        // 5) Re-enable a clean pen overlay after white+GC have landed.
+        postDelayed({
+            if (gen != wipeGeneration) return@postDelayed
+            enablePenOverlay()
+            warmUpPenPipeline()
+            Log.d("InkCanvasView", "dismissReplyForNewWriting: pen ready")
+        }, 400)
+    }
+
+    /**
+     * Clear strokes + reply and paint solid white. Pen overlay stays OFF unless
+     * [reenablePen] is true (only for starting a new writing session).
+     *
+     * For dismissing AI so the user can write, prefer [dismissReplyForNewWriting].
+     */
+    fun wipeToWhite(
+        useFullGc: Boolean = false,
+        suppressAnimationForGc: Boolean = false,
+        reenablePen: Boolean = false
+    ) {
+        val gen = ++wipeGeneration
+        Log.d(
+            "InkCanvasView",
+            "wipeToWhite gen=$gen (gc=$useFullGc, suppress=$suppressAnimationForGc, reenablePen=$reenablePen)"
+        )
+
+        if (suppressAnimationForGc) {
+            gcSuppressCount = 2
         }
 
-        drawSurface(UpdateMode.GC)
+        pauseHandler.removeCallbacks(pauseRunnable)
+        stopReplyAnimation()
+        strokes.clear()
+        currentStroke = null
+        lastProcessedTimestamp = -1L
+        penTimeBase = -1L
+        wallClockBaseMs = 0L
+
+        // 1) Kill pen overlay FIRST so it cannot recommit the previous AI frame.
+        disablePenOverlay()
+        exitPenDrawingMode()
+        strokeParamsReady = false
+
+        // 2) Software buffers → pure white.
+        surfaceFilledWhite = true
+        canvasBitmap?.eraseColor(Color.WHITE)
+        bitmapCanvas?.drawColor(Color.WHITE)
+
+        // 3) Push white to the panel BEFORE any pen re-enable.
+        drawSurface(UpdateMode.DU)
+        // Second white frame — first DU can be ignored while leaving A2 mode.
+        post {
+            if (gen != wipeGeneration || !surfaceFilledWhite) return@post
+            canvasBitmap?.eraseColor(Color.WHITE)
+            bitmapCanvas?.drawColor(Color.WHITE)
+            drawSurface(UpdateMode.DU)
+        }
+
+        if (useFullGc) {
+            postDelayed({
+                if (gen != wipeGeneration || !surfaceFilledWhite) return@postDelayed
+                drawSurface(UpdateMode.GC)
+            }, 120)
+        }
+
+        if (reenablePen) {
+            postDelayed({
+                if (gen != wipeGeneration) return@postDelayed
+                enablePenOverlay()
+                warmUpPenPipeline()
+            }, 350)
+        }
+    }
+
+    /** Back-compat wrapper used by older call sites. */
+    fun clearAll(
+        suppressAnimationForGc: Boolean = false,
+        useFullGc: Boolean = true,
+        fillWhite: Boolean = false
+    ) {
+        if (fillWhite || useFullGc) {
+            wipeToWhite(
+                useFullGc = false,
+                suppressAnimationForGc = suppressAnimationForGc,
+                reenablePen = !suppressAnimationForGc
+            )
+        } else {
+            pauseHandler.removeCallbacks(pauseRunnable)
+            stopReplyAnimation()
+            strokes.clear()
+            currentStroke = null
+            lastProcessedTimestamp = -1L
+            penTimeBase = -1L
+            wallClockBaseMs = 0L
+            surfaceFilledWhite = false
+            canvasBitmap?.eraseColor(Color.TRANSPARENT)
+            exitPenDrawingMode()
+            disablePenOverlay()
+            drawSurface(UpdateMode.DU)
+            postDelayed({
+                enablePenOverlay()
+                warmUpPenPipeline()
+            }, 80)
+        }
+    }
+
+    fun stopReplyAnimation() {
+        replyHandler.removeCallbacksAndMessages(null)
+        replyFullText = ""
+        replyDisplayedText = ""
+        replyWords = emptyList()
+        replyWordIndex = 0
+    }
+
+    fun hasReplyContent(): Boolean = replyFullText.isNotEmpty() || replyDisplayedText.isNotEmpty()
+
+    /**
+     * Typewriter-draw [text] on the opaque white pen surface.
+     * Pen overlay stays disabled for the whole reply (prevents previous-frame recommit).
+     */
+    fun showReplyOnSurface(text: String, startDelayMs: Long = 40L) {
+        // Invalidate any pending pen re-enable from a previous wipe.
+        wipeGeneration++
+        stopReplyAnimation()
+        disablePenOverlay()
+        exitPenDrawingMode()
+        surfaceFilledWhite = true
+
+        // Guarantee a pure white base on this layer only — no transparent open.
+        canvasBitmap?.eraseColor(Color.WHITE)
+        bitmapCanvas?.drawColor(Color.WHITE)
+        drawSurface(UpdateMode.DU)
+
+        replyFullText = text
+        replyDisplayedText = ""
+        replyWords = text.split(" ").filter { it.isNotEmpty() }
+        replyWordIndex = 0
+
+        if (replyWords.isEmpty()) return
+
+        val startGen = wipeGeneration
+        // Small delay so the white frame lands before the first black glyphs.
+        replyHandler.postDelayed({
+            if (startGen != wipeGeneration) return@postDelayed
+            replyTypewriterRunnable.run()
+        }, startDelayMs.coerceAtLeast(80L))
+    }
+
+    private fun paintReplyOntoBitmap() {
+        val bc = bitmapCanvas ?: return
+        val w = canvasBitmap?.width ?: width
+        if (w <= 0) return
+
+        bc.drawColor(Color.WHITE)
+        if (replyDisplayedText.isEmpty()) return
+
+        val padding = 60f
+        val maxWidth = w - padding * 2
+        val lines = mutableListOf<String>()
+        var currentLine = StringBuilder()
+        var currentLineWidth = 0f
+
+        for (word in replyDisplayedText.split(" ")) {
+            val wordWithSpace = if (currentLine.isEmpty()) word else " $word"
+            val wordWidth = replyTextPaint.measureText(wordWithSpace)
+            if (currentLineWidth + wordWidth > maxWidth && currentLine.isNotEmpty()) {
+                lines.add(currentLine.toString())
+                currentLine = StringBuilder(word)
+                currentLineWidth = replyTextPaint.measureText(word)
+            } else {
+                currentLine.append(wordWithSpace)
+                currentLineWidth += wordWidth
+            }
+        }
+        if (currentLine.isNotEmpty()) lines.add(currentLine.toString())
+
+        var y = 150f
+        for (line in lines) {
+            bc.drawText(line, padding, y, replyTextPaint)
+            y += replyTextPaint.fontSpacing * 1.2f
+        }
     }
 
     fun clearForNewSession() {
@@ -573,5 +925,10 @@ class InkCanvasView @JvmOverloads constructor(
     fun refreshScreenGc() {
         Log.d("InkCanvasView", "refreshScreenGc called")
         drawSurface(UpdateMode.GC)
+    }
+
+    fun refreshScreenDu() {
+        Log.d("InkCanvasView", "refreshScreenDu called")
+        drawSurface(UpdateMode.DU)
     }
 }

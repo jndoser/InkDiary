@@ -57,29 +57,22 @@ class HandwrittenReplyView @JvmOverloads constructor(
                 invalidate()
                 animationHandler.postDelayed(this, wordDelayMs)
             } else {
-                // Animation completed! Clear artifacts with a clean high-quality flash
+                // Soft settle only — NEVER root-level GC here.
+                // GC while any residual remains re-flashes the previous AI answer on Boox.
                 try {
-                    // Set this view to GC and invalidate
-                    EpdController.setViewDefaultUpdateMode(this@HandwrittenReplyView, UpdateMode.GC)
+                    EpdController.setViewDefaultUpdateMode(this@HandwrittenReplyView, UpdateMode.DU)
                     invalidate()
-                    
-                    // Also try to find the root view and force a global refresh to wipe any ink ghosts
-                    var root: View = this@HandwrittenReplyView
-                    while (root.parent is View) {
-                        root = root.parent as View
-                    }
-                    EpdController.setViewDefaultUpdateMode(root, UpdateMode.GC)
-                    root.invalidate()
-                    
-                    Log.d("HandwrittenReplyView", "Animation complete: Multi-layer GC refresh triggered")
+                    Log.d("HandwrittenReplyView", "Animation complete: DU settle")
                 } catch (e: Exception) {
-                    Log.e("HandwrittenReplyView", "GC refresh failed: ${e.message}")
+                    Log.e("HandwrittenReplyView", "settle failed: ${e.message}")
                 }
             }
         }
     }
 
     init {
+        // Always opaque white so e-ink residual cannot show through empty frames.
+        setBackgroundColor(Color.WHITE)
         try {
             // Enable high-performance updates for this view
             EpdController.enablePost(this, 1)
@@ -88,22 +81,53 @@ class HandwrittenReplyView @JvmOverloads constructor(
 
     fun setTextAndAnimate(text: String) {
         // Stop any running animations safely
-        animationHandler.removeCallbacks(typewriterRunnable)
+        animationHandler.removeCallbacksAndMessages(null)
 
-        // Ensure background is transparent so the drawing canvas shows through behind the text
-        setBackgroundColor(Color.TRANSPARENT)
+        setBackgroundColor(Color.WHITE)
 
         this.fullText = text
         this.displayedText = ""
         this.wordsList = text.split(" ").filter { it.isNotEmpty() }
         this.currentWordIndex = 0
+        this.lines.clear()
         this.alpha = 1f // Keep opacity at 100% permanently to prevent E-ink fade glitches
+        visibility = View.VISIBLE
 
         if (width > 0) {
             animationHandler.post(typewriterRunnable)
         } else {
             invalidate()
         }
+    }
+
+    /**
+     * Blank to white without GC. GC re-exposes residual previous-answer pixels on Boox.
+     */
+    fun coverWithWhite() {
+        animationHandler.removeCallbacksAndMessages(null)
+        fullText = ""
+        displayedText = ""
+        wordsList = emptyList()
+        currentWordIndex = 0
+        lines.clear()
+        setBackgroundColor(Color.WHITE)
+        visibility = View.VISIBLE
+        try {
+            EpdController.setViewDefaultUpdateMode(this, UpdateMode.DU)
+        } catch (e: Exception) {}
+        invalidate()
+    }
+
+    /**
+     * Show text with typewriter. Does NOT GC first — the pen surface white-wipe
+     * is responsible for killing residual. A GC here was flashing the previous answer.
+     */
+    fun showTextClean(text: String, startDelayMs: Long = 40L) {
+        coverWithWhite()
+        animationHandler.postDelayed({
+            if (visibility != View.VISIBLE) return@postDelayed
+            setTextAndAnimate(text)
+        }, startDelayMs)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -145,6 +169,10 @@ class HandwrittenReplyView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        // Explicit white fill so residual black pixels are overwritten on e-ink.
+        canvas.drawColor(Color.WHITE)
+
         if (displayedText.isEmpty() || lines.isEmpty()) return
 
         canvas.save()
@@ -162,27 +190,18 @@ class HandwrittenReplyView @JvmOverloads constructor(
     }
 
     fun clear() {
-        // Remove all pending animation callbacks (including the end-of-animation GC callback)
+        coverWithWhite()
+    }
+
+    /** Fully stop animations and blank content without scheduling further GC work. */
+    fun resetContent() {
         animationHandler.removeCallbacksAndMessages(null)
         fullText = ""
         displayedText = ""
         wordsList = emptyList()
         currentWordIndex = 0
         lines.clear()
-
-        // Set GC mode to physically wipe the e-ink screen of any ghosting
-        try {
-            EpdController.setViewDefaultUpdateMode(this, UpdateMode.GC)
-            
-            // Also try to find the root view and force a global refresh to wipe any ink ghosts
-            var root: View = this
-            while (root.parent is View) {
-                root = root.parent as View
-            }
-            EpdController.setViewDefaultUpdateMode(root, UpdateMode.GC)
-            root.invalidate()
-        } catch (e: Exception) {}
-        invalidate()
+        setBackgroundColor(Color.WHITE)
     }
 
     fun hasContent(): Boolean = fullText.isNotEmpty() || displayedText.isNotEmpty()
