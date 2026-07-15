@@ -199,9 +199,9 @@ class MainActivity : AppCompatActivity() {
         val preferred = Config.getPreferredLLM(this)
         val geminiKey = Config.getGeminiApiKey(this)
         val sambaKey = Config.getSambaNovaApiKey(this)
+        val lang = getActiveLanguageLabel()
 
         if (preferred == Config.LLM_ON_DEVICE) {
-            val lang = getActiveLanguageLabel()
             if (!ModelDownloadManager.isModelDownloaded(this)) {
                 debugText.text = "Downloading offline AI model (0%). Please wait..."
                 lifecycleScope.launch {
@@ -216,7 +216,9 @@ class MainActivity : AppCompatActivity() {
                         (llmService as? OnDeviceLLMService)?.loadModel(
                             onLoaded = {
                                 runOnUiThread {
-                                    if (recognizerIsReady) debugText.text = "Ready (On-Device, $lang). Write something."
+                                    if (recognizerIsReady) {
+                                        debugText.text = "Ready (On-Device, $lang). Write something."
+                                    }
                                 }
                             },
                             onError = { e ->
@@ -224,7 +226,10 @@ class MainActivity : AppCompatActivity() {
                             }
                         )
                     } else {
-                        runOnUiThread { debugText.text = "Download failed: ${result.exceptionOrNull()?.message}" }
+                        runOnUiThread {
+                            debugText.text =
+                                "Download failed: ${result.exceptionOrNull()?.message}"
+                        }
                     }
                 }
             } else {
@@ -232,7 +237,9 @@ class MainActivity : AppCompatActivity() {
                 (llmService as? OnDeviceLLMService)?.loadModel(
                     onLoaded = {
                         runOnUiThread {
-                            if (recognizerIsReady) debugText.text = "Ready (On-Device, $lang). Write something."
+                            if (recognizerIsReady) {
+                                debugText.text = "Ready (On-Device, $lang). Write something."
+                            }
                         }
                     },
                     onError = { e ->
@@ -244,7 +251,6 @@ class MainActivity : AppCompatActivity() {
             debugText.text = "GUIDE: API Key is missing. Tap 3 times (finger) to enter API Keys."
         } else {
             val active = if (preferred == Config.LLM_GEMINI) "Gemini" else "SambaNova"
-            val lang = getActiveLanguageLabel()
             if (recognizerIsReady) {
                 debugText.text = "Ready ($active, $lang). Write something."
             }
@@ -335,6 +341,10 @@ class MainActivity : AppCompatActivity() {
                     1 -> Config.LLM_SAMBANOVA
                     else -> Config.LLM_ON_DEVICE
                 }
+                // Re-selecting on-device clears a previous native-crash lockout.
+                if (preferred == Config.LLM_ON_DEVICE) {
+                    Config.clearOnDeviceUnsafe(context)
+                }
                 Config.setPreferredLLM(context, preferred)
 
                 val selectedLang = if (langSpinner.selectedItemPosition == 1) Config.LANG_VIETNAMESE else Config.LANG_ENGLISH
@@ -384,7 +394,20 @@ class MainActivity : AppCompatActivity() {
         debugText.visibility = if (Config.isDebugEnabled(this)) View.VISIBLE else View.GONE
         debugText.setTextColor(Color.WHITE)
         debugText.text = "Initializing..."
-        
+
+        // If the previous process died mid native-load, recover to cloud for this session.
+        // User can re-enable On-Device from settings (that clears the lockout).
+        if (Config.recoverFromOnDeviceCrashIfNeeded(this)) {
+            Toast.makeText(
+                this,
+                "On-device AI crashed last launch. Switched to cloud AI. You can re-enable On-Device in settings.",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            // Clear lockouts set by an earlier workaround; native lib packaging is fixed now.
+            Config.clearOnDeviceUnsafe(this)
+        }
+
         Log.d("InkDiaryDebug", "BuildConfig Gemini: ${BuildConfig.GEMINI_API_KEY}")
         Log.d("InkDiaryDebug", "BuildConfig Samba: ${BuildConfig.SAMBANOVA_API_KEY}")
 

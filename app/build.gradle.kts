@@ -58,6 +58,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
+            // Prefer app/src/main/jniLibs (ARMv8.0-safe copies) over AAR variants.
+            // Boox CPU reports aes+crc32 so llamacpp loads "v8_2", but the SoC is not
+            // true ARMv8.2 — we ship librnllama_v8 under the v8_2* names to avoid SIGILL.
+            pickFirsts += "**/librnllama.so"
+            pickFirsts += "**/librnllama_v8.so"
             pickFirsts += "**/librnllama_v8_2.so"
             pickFirsts += "**/librnllama_v8_2_dotprod.so"
             pickFirsts += "**/librnllama_v8_2_i8mm.so"
